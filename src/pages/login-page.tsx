@@ -63,11 +63,14 @@ export function LoginPage() {
 
         <div className="space-y-8">
           <div>
+            <div className="inline-flex items-center gap-2 bg-white/15 rounded-full px-3 py-1.5 mb-4">
+              <span className="text-xs font-bold text-white/80 uppercase tracking-wide">Para PYMEs en LATAM</span>
+            </div>
             <h1 className="text-4xl font-black text-white leading-tight">
-              Tu centro de mando<br />omnicanal con IA
+              La IA de atención<br />que tu PYME necesita
             </h1>
             <p className="mt-3 text-lg text-white/60 leading-relaxed">
-              Gestiona todas tus conversaciones, automatiza respuestas y mide resultados desde un solo lugar.
+              Automatiza el 74% de tus consultas desde el día 1. Sin infraestructura costosa, sin equipos grandes.
             </p>
           </div>
           <div className="space-y-5">
