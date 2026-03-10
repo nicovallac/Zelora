@@ -146,20 +146,23 @@ export default function SignupPage() {
 
         <div className="space-y-8">
           <div>
+            <div className="inline-flex items-center gap-2 bg-white/15 rounded-full px-3 py-1.5 mb-4">
+              <span className="text-xs font-bold text-white/80 uppercase tracking-wide">Hecho para PYMEs en LATAM</span>
+            </div>
             <h1 className="text-4xl font-black text-white leading-tight">
-              Empieza en<br />menos de 5 minutos
+              Atención con IA al<br />alcance de tu PYME
             </h1>
             <p className="mt-3 text-lg text-white/60 leading-relaxed">
-              Crea tu cuenta, conecta tus canales y empieza a atender clientes con IA hoy mismo.
+              La plataforma omnicanal que antes solo tenían las grandes empresas, ahora diseñada para pymes de toda Latinoamérica.
             </p>
           </div>
 
           <div className="space-y-4">
             {[
               'Sin tarjeta de crédito para el plan Starter',
-              'Configuración guiada paso a paso',
-              'Soporte en español incluido',
-              'Cancela cuando quieras',
+              'Precios en USD accesibles para PYMEs',
+              'Soporte en español · equipos de 1 a 50 agentes',
+              'Disponible en Colombia, México, Chile, Perú y más',
             ].map(item => (
               <div key={item} className="flex items-center gap-3">
                 <CheckCircle size={18} className="text-emerald-400 shrink-0" />
