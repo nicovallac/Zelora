@@ -1,58 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Mail, Eye, EyeOff, Loader2, MessageSquare, User, Building2,
-  CheckCircle, ArrowRight, Star
+  CheckCircle, ArrowRight
 } from 'lucide-react';
-
-const TESTIMONIALS = [
-  {
-    quote: 'Con Vendly redujimos el tiempo de respuesta de 4 horas a 38 segundos. Nuestros clientes lo notaron de inmediato.',
-    name: 'María Pérez',
-    role: 'Directora de Operaciones',
-    company: 'Comfaguajira',
-    initials: 'MP',
-    metric: '−98% tiempo de respuesta',
-    color: 'bg-emerald-400/20 text-emerald-300',
-  },
-  {
-    quote: 'Antes gestionábamos 200 consultas diarias con 8 asesores. Hoy atendemos 1.200 con el mismo equipo gracias a la IA.',
-    name: 'Carlos Jiménez',
-    role: 'Gerente de Servicio al Cliente',
-    company: 'Bancolombia Regional',
-    initials: 'CJ',
-    metric: '6× más capacidad sin contratar',
-    color: 'bg-sky-400/20 text-sky-300',
-  },
-  {
-    quote: 'El onboarding tomó menos de un día. En la primera semana ya teníamos el 70% de las preguntas frecuentes automatizadas.',
-    name: 'Daniela Ruiz',
-    role: 'Head of CX',
-    company: 'Sura Seguros',
-    initials: 'DR',
-    metric: '70% automatización en 7 días',
-    color: 'bg-violet-400/20 text-violet-300',
-  },
-  {
-    quote: 'Nuestro CSAT pasó de 74% a 93% en dos meses. Los clientes valoran la inmediatez y que la IA siempre tiene la respuesta correcta.',
-    name: 'Andrés Morales',
-    role: 'VP Experiencia del Cliente',
-    company: 'EPM',
-    initials: 'AM',
-    metric: 'CSAT 74% → 93%',
-    color: 'bg-amber-400/20 text-amber-300',
-  },
-  {
-    quote: 'Vendly nos permitió unificar WhatsApp, Instagram y la web en un solo inbox. Ya no perdemos ni una consulta.',
-    name: 'Lorena Castro',
-    role: 'Coordinadora Digital',
-    company: 'Claro Colombia',
-    initials: 'LC',
-    metric: '0 consultas perdidas',
-    color: 'bg-pink-400/20 text-pink-300',
-  },
-];
 
 const PLANS = [
   { id: 'starter', name: 'Starter', price: 'Gratis', desc: '1 canal · 500 conv/mes · 1 agente', highlight: false },
@@ -89,14 +41,6 @@ function PasswordStrength({ password }: { password: string }) {
 export default function SignupPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState<1 | 2>(1);
-  const [testimonialIdx, setTestimonialIdx] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setTestimonialIdx(i => (i + 1) % TESTIMONIALS.length);
-    }, 4500);
-    return () => clearInterval(timer);
-  }, []);
 
   // Step 1 fields
   const [name, setName] = useState('');
@@ -146,23 +90,20 @@ export default function SignupPage() {
 
         <div className="space-y-8">
           <div>
-            <div className="inline-flex items-center gap-2 bg-white/15 rounded-full px-3 py-1.5 mb-4">
-              <span className="text-xs font-bold text-white/80 uppercase tracking-wide">Hecho para PYMEs en LATAM</span>
-            </div>
             <h1 className="text-4xl font-black text-white leading-tight">
-              Atención con IA al<br />alcance de tu PYME
+              Empieza en<br />menos de 5 minutos
             </h1>
             <p className="mt-3 text-lg text-white/60 leading-relaxed">
-              La plataforma omnicanal que antes solo tenían las grandes empresas, ahora diseñada para pymes de toda Latinoamérica.
+              Crea tu cuenta, conecta tus canales y empieza a atender clientes con IA hoy mismo.
             </p>
           </div>
 
           <div className="space-y-4">
             {[
               'Sin tarjeta de crédito para el plan Starter',
-              'Precios en USD accesibles para PYMEs',
-              'Soporte en español · equipos de 1 a 50 agentes',
-              'Disponible en Colombia, México, Chile, Perú y más',
+              'Configuración guiada paso a paso',
+              'Soporte en español incluido',
+              'Cancela cuando quieras',
             ].map(item => (
               <div key={item} className="flex items-center gap-3">
                 <CheckCircle size={18} className="text-emerald-400 shrink-0" />
@@ -171,62 +112,17 @@ export default function SignupPage() {
             ))}
           </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { value: '500+', label: 'empresas' },
-              { value: '74%', label: 'automatización' },
-              { value: '4.9★', label: 'valoración' },
-            ].map(s => (
-              <div key={s.label} className="bg-white/10 rounded-xl p-3 text-center">
-                <p className="text-lg font-black text-white">{s.value}</p>
-                <p className="text-xs text-white/50 mt-0.5">{s.label}</p>
+          {/* Social proof */}
+          <div className="bg-white/10 rounded-2xl p-5">
+            <p className="text-white/80 text-sm italic leading-relaxed">
+              "Con Vendly redujimos el tiempo de respuesta de 4 horas a 38 segundos. Nuestros clientes lo notaron de inmediato."
+            </p>
+            <div className="flex items-center gap-3 mt-4">
+              <div className="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center text-xs font-bold text-white">MP</div>
+              <div>
+                <p className="text-xs font-bold text-white">María Pérez</p>
+                <p className="text-xs text-white/50">Directora de Operaciones · Comfaguajira</p>
               </div>
-            ))}
-          </div>
-
-          {/* Rotating testimonials */}
-          <div className="bg-white/10 rounded-2xl p-5 min-h-[148px] relative overflow-hidden">
-            <div className="flex gap-0.5 mb-3">
-              {[...Array(5)].map((_, i) => <Star key={i} size={11} className="fill-amber-400 text-amber-400" />)}
-            </div>
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={testimonialIdx}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.35 }}
-              >
-                <p className="text-white/85 text-sm italic leading-relaxed mb-4">
-                  "{TESTIMONIALS[testimonialIdx].quote}"
-                </p>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0">
-                      {TESTIMONIALS[testimonialIdx].initials}
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-white">{TESTIMONIALS[testimonialIdx].name}</p>
-                      <p className="text-xs text-white/50">{TESTIMONIALS[testimonialIdx].role} · {TESTIMONIALS[testimonialIdx].company}</p>
-                    </div>
-                  </div>
-                  <span className={`text-xs font-semibold px-2 py-1 rounded-lg ${TESTIMONIALS[testimonialIdx].color}`}>
-                    {TESTIMONIALS[testimonialIdx].metric}
-                  </span>
-                </div>
-              </motion.div>
-            </AnimatePresence>
-
-            {/* Dot indicators */}
-            <div className="flex gap-1.5 mt-4">
-              {TESTIMONIALS.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setTestimonialIdx(i)}
-                  className={`h-1 rounded-full transition-all ${i === testimonialIdx ? 'bg-white w-4' : 'bg-white/30 w-1.5'}`}
-                />
-              ))}
             </div>
           </div>
         </div>
