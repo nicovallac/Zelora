@@ -15,6 +15,7 @@ const SettingsPage = lazy(() => import('./pages/settings-page').then(m => ({ def
 const ProfilePage = lazy(() => import('./pages/profile-page').then(m => ({ default: m.ProfilePage })));
 const LoginPage = lazy(() => import('./pages/login-page').then(m => ({ default: m.LoginPage })));
 const OnboardingPage = lazy(() => import('./pages/onboarding-page'));
+const SignupPage = lazy(() => import('./pages/signup-page'));
 
 // Admin
 const AgentsPage = lazy(() => import('./pages/admin/agents-page').then(m => ({ default: m.AgentsPage })));
@@ -36,6 +37,7 @@ export default function App() {
     <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route
           element={
