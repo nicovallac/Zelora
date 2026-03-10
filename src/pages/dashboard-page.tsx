@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   MessageSquare, Users, Clock, TrendingUp, AlertTriangle,
   CheckCircle, ArrowRight, Wifi, WifiOff, Phone, Mail,
-  Instagram, Send, Globe, Zap, RefreshCw
+  Instagram, Send, Globe, Zap, RefreshCw, Lock
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -18,11 +18,30 @@ const liveMetrics = [
 ];
 
 const channelStatus = [
-  { name: 'WhatsApp', icon: Phone, status: 'online', conversations: 14, color: 'emerald' },
-  { name: 'Instagram', icon: Instagram, status: 'online', conversations: 5, color: 'pink' },
-  { name: 'Web Chat', icon: Globe, status: 'online', conversations: 4, color: 'sky' },
-  { name: 'Email', icon: Mail, status: 'degraded', conversations: 0, color: 'amber' },
-  { name: 'Telegram', icon: Send, status: 'offline', conversations: 0, color: 'ink' },
+  {
+    name: 'WhatsApp', icon: Phone, status: 'online', conversations: 14, locked: false,
+    iconStyle: { background: '#DCFCE7', color: '#16A34A' },
+  },
+  {
+    name: 'Instagram', icon: Instagram, status: 'online', conversations: 5, locked: false,
+    iconStyle: { background: 'linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045)', color: '#fff' },
+  },
+  {
+    name: 'Web Chat', icon: Globe, status: 'online', conversations: 4, locked: false,
+    iconStyle: { background: '#E0F2FE', color: '#0284C7' },
+  },
+  {
+    name: 'TikTok', icon: MessageSquare, status: 'offline', conversations: 0, locked: true,
+    iconStyle: { background: '#000', color: '#FE2C55' },
+  },
+  {
+    name: 'Email', icon: Mail, status: 'offline', conversations: 0, locked: true,
+    iconStyle: { background: '#FEE2E2', color: '#EA4335' },
+  },
+  {
+    name: 'Telegram', icon: Send, status: 'offline', conversations: 0, locked: true,
+    iconStyle: { background: '#E0F7FF', color: '#2AABEE' },
+  },
 ];
 
 const recentAlerts = [
@@ -152,17 +171,19 @@ export default function DashboardPage() {
         {/* Channel status */}
         <div className="bg-white rounded-xl border border-ink-100 p-5 shadow-sm">
           <h2 className="font-semibold text-ink-800 text-sm mb-4">Estado de canales</h2>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {channelStatus.map(ch => (
-              <div key={ch.name} className="flex items-center justify-between">
+              <div key={ch.name} className={`relative flex items-center justify-between p-2 rounded-lg transition-all ${ch.locked ? 'opacity-50' : ''}`}>
+                {ch.locked && (
+                  <div className="absolute inset-0 rounded-lg backdrop-blur-[2px] bg-white/40 flex items-center justify-end pr-3 z-10">
+                    <div className="flex items-center gap-1 bg-ink-100 rounded-full px-2 py-0.5">
+                      <Lock size={10} className="text-ink-500" />
+                      <span className="text-[10px] text-ink-500 font-medium">No conectado</span>
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center gap-2.5">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                    ch.color === 'emerald' ? 'bg-emerald-50 text-emerald-600' :
-                    ch.color === 'pink' ? 'bg-pink-50 text-pink-600' :
-                    ch.color === 'sky' ? 'bg-sky-50 text-sky-600' :
-                    ch.color === 'amber' ? 'bg-amber-50 text-amber-600' :
-                    'bg-ink-50 text-ink-400'
-                  }`}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={ch.iconStyle}>
                     <ch.icon size={15} />
                   </div>
                   <div>
@@ -172,7 +193,7 @@ export default function DashboardPage() {
                     </p>
                   </div>
                 </div>
-                <span className={`w-2 h-2 rounded-full ${
+                <span className={`w-2 h-2 rounded-full shrink-0 ${
                   ch.status === 'online' ? 'bg-emerald-400' :
                   ch.status === 'degraded' ? 'bg-amber-400' :
                   'bg-ink-300'

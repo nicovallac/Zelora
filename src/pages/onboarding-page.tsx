@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Building2, Phone, Users, BookOpen, Rocket, ChevronRight,
   ChevronLeft, Check, Globe, Instagram, Mail, Send, MessageSquare,
-  Upload, Plus, Trash2, Sparkles, ArrowRight
+  Upload, Plus, Trash2, Sparkles, ArrowRight, Lock
 } from 'lucide-react';
 
 const STEPS = [
@@ -21,12 +21,42 @@ const INDUSTRIES = [
 ];
 
 const CHANNELS = [
-  { id: 'whatsapp', name: 'WhatsApp Business', icon: Phone, color: 'emerald', description: 'API oficial Meta · hasta 1K conv/día gratuitas', recommended: true },
-  { id: 'instagram', name: 'Instagram DM', icon: Instagram, color: 'pink', description: 'Inbox unificado con Instagram Direct' },
-  { id: 'webchat', name: 'Web Chat', icon: Globe, color: 'sky', description: 'Widget embebible en tu sitio web' },
-  { id: 'email', name: 'Email', icon: Mail, color: 'amber', description: 'Gestión de bandeja de entrada' },
-  { id: 'telegram', name: 'Telegram', icon: Send, color: 'blue', description: 'Bot de Telegram' },
-  { id: 'sms', name: 'SMS', icon: MessageSquare, color: 'violet', description: 'Mensajería SMS masiva' },
+  {
+    id: 'whatsapp', name: 'WhatsApp Business', icon: Phone, locked: false,
+    description: 'API oficial Meta · hasta 1K conv/día gratuitas', recommended: true,
+    iconStyle: { background: '#DCFCE7', color: '#16A34A' },
+    borderColor: '#16A34A',
+  },
+  {
+    id: 'instagram', name: 'Instagram DM', icon: Instagram, locked: false,
+    description: 'Inbox unificado con Instagram Direct', recommended: false,
+    iconStyle: { background: 'linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045)', color: '#fff' },
+    borderColor: '#FD1D1D',
+  },
+  {
+    id: 'webchat', name: 'Web Chat', icon: Globe, locked: false,
+    description: 'Widget embebible en tu sitio web', recommended: false,
+    iconStyle: { background: '#E0F2FE', color: '#0284C7' },
+    borderColor: '#0284C7',
+  },
+  {
+    id: 'tiktok', name: 'TikTok', icon: MessageSquare, locked: true,
+    description: 'Comentarios y DMs de TikTok · Próximamente', recommended: false,
+    iconStyle: { background: '#000', color: '#FE2C55' },
+    borderColor: '#FE2C55',
+  },
+  {
+    id: 'email', name: 'Email', icon: Mail, locked: true,
+    description: 'Gestión de bandeja de entrada · Próximamente', recommended: false,
+    iconStyle: { background: '#FEE2E2', color: '#EA4335' },
+    borderColor: '#EA4335',
+  },
+  {
+    id: 'telegram', name: 'Telegram', icon: Send, locked: true,
+    description: 'Bot de Telegram · Próximamente', recommended: false,
+    iconStyle: { background: '#E0F7FF', color: '#2AABEE' },
+    borderColor: '#2AABEE',
+  },
 ];
 
 interface TeamMember { email: string; role: 'admin' | 'supervisor' | 'asesor'; }
@@ -214,21 +244,25 @@ export default function OnboardingPage() {
                   {CHANNELS.map(ch => (
                     <div
                       key={ch.id}
-                      onClick={() => toggleChannel(ch.id)}
-                      className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                        selectedChannels.includes(ch.id)
-                          ? 'border-brand-400 bg-brand-50'
-                          : 'border-ink-200 hover:border-ink-300'
+                      onClick={() => !ch.locked && toggleChannel(ch.id)}
+                      className={`relative flex items-center gap-4 p-4 rounded-xl border-2 transition-all ${
+                        ch.locked
+                          ? 'border-ink-200 cursor-not-allowed'
+                          : selectedChannels.includes(ch.id)
+                            ? 'cursor-pointer bg-ink-50'
+                            : 'border-ink-200 cursor-pointer hover:border-ink-300'
                       }`}
+                      style={!ch.locked && selectedChannels.includes(ch.id) ? { borderColor: ch.borderColor, background: `${ch.borderColor}08` } : {}}
                     >
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                        ch.color === 'emerald' ? 'bg-emerald-100 text-emerald-600' :
-                        ch.color === 'pink' ? 'bg-pink-100 text-pink-600' :
-                        ch.color === 'sky' ? 'bg-sky-100 text-sky-600' :
-                        ch.color === 'amber' ? 'bg-amber-100 text-amber-600' :
-                        ch.color === 'violet' ? 'bg-violet-100 text-violet-600' :
-                        'bg-blue-100 text-blue-600'
-                      }`}>
+                      {ch.locked && (
+                        <div className="absolute inset-0 rounded-xl backdrop-blur-[1.5px] bg-white/50 flex items-center justify-end pr-4 z-10">
+                          <div className="flex items-center gap-1.5 bg-ink-100 rounded-full px-3 py-1">
+                            <Lock size={11} className="text-ink-500" />
+                            <span className="text-xs text-ink-500 font-medium">Próximamente</span>
+                          </div>
+                        </div>
+                      )}
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={ch.iconStyle}>
                         <ch.icon size={18} />
                       </div>
                       <div className="flex-1">
@@ -240,11 +274,13 @@ export default function OnboardingPage() {
                         </div>
                         <p className="text-xs text-ink-500 mt-0.5">{ch.description}</p>
                       </div>
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-                        selectedChannels.includes(ch.id) ? 'bg-brand-600 border-brand-600' : 'border-ink-300'
-                      }`}>
-                        {selectedChannels.includes(ch.id) && <Check size={12} className="text-white" />}
-                      </div>
+                      {!ch.locked && (
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                          selectedChannels.includes(ch.id) ? 'border-transparent' : 'border-ink-300'
+                        }`} style={selectedChannels.includes(ch.id) ? { background: ch.borderColor, borderColor: ch.borderColor } : {}}>
+                          {selectedChannels.includes(ch.id) && <Check size={12} className="text-white" />}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
