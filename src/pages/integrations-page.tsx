@@ -107,7 +107,7 @@ export function IntegrationsPage() {
   const [copied, setCopied] = useState(false);
   const [webhooks, setWebhooks] = useState<WebhookEntry[]>(MOCK_WEBHOOKS);
   const [newWh, setNewWh] = useState({ evento: '', url: '' });
-  const webhookUrl = `https://api.comfaguajira-chatbot.com/integrations/${connectingItem?.id ?? 'new'}/webhook`;
+  const webhookUrl = `https://api.vendly.com/integrations/${connectingItem?.id ?? 'new'}/webhook`;
 
   function handleCopy() {
     void navigator.clipboard.writeText(webhookUrl);

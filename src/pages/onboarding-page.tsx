@@ -99,7 +99,7 @@ export default function OnboardingPage() {
             <div className="w-9 h-9 bg-brand-600 rounded-xl flex items-center justify-center">
               <MessageSquare size={20} className="text-white" />
             </div>
-            <span className="text-xl font-bold text-ink-900">OmniDesk</span>
+            <span className="text-xl font-bold text-ink-900">Vendly</span>
           </div>
         </div>
 

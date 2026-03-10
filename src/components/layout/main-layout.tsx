@@ -112,7 +112,7 @@ export default function MainLayout() {
           <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center shrink-0">
             <MessageSquare size={16} className="text-white" />
           </div>
-          <span className="font-bold text-ink-900 text-base">OmniDesk</span>
+          <span className="font-bold text-ink-900 text-base">Vendly</span>
         </div>
       </div>
 
