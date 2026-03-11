@@ -12,6 +12,8 @@ import {
   Upload,
   X,
   FileText,
+  CheckCircle2,
+  Circle,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { mockKBArticles, KB_CATEGORIES } from '../data/mock';
@@ -75,6 +77,41 @@ interface AttachedDoc {
   size: string;
 }
 
+interface QuickKBArticle {
+  id: string;
+  titulo: string;
+  categoria: KBCategory;
+  contenido: string;
+  tags: string[];
+}
+
+const QUICK_KB_ARTICLES: QuickKBArticle[] = [
+  {
+    id: 'faq-atencion',
+    titulo: 'Preguntas frecuentes de atencion',
+    categoria: 'General',
+    tags: ['faq', 'horarios', 'canales'],
+    contenido:
+      '## Preguntas frecuentes\n\n- Cual es el horario de atencion?\n- Como hablo con un asesor?\n- Por cual canal responden mas rapido?\n\n## Respuesta estandar\n\nNuestro canal principal es WhatsApp y el horario de asesores es de 8:00 a.m. a 6:00 p.m.',
+  },
+  {
+    id: 'politicas-cliente',
+    titulo: 'Politicas de pagos y devoluciones',
+    categoria: 'General',
+    tags: ['pagos', 'devoluciones', 'politicas'],
+    contenido:
+      '## Politica de pagos\n\nDescribe medios de pago, tiempos y validaciones.\n\n## Politica de devoluciones\n\nIncluye condiciones y pasos para solicitar devolucion.',
+  },
+  {
+    id: 'guion-escalamiento',
+    titulo: 'Guion para escalar a asesor',
+    categoria: 'PQRS',
+    tags: ['escalamiento', 'asesor', 'pqrs'],
+    contenido:
+      '## Mensaje de escalamiento\n\nTe voy a comunicar con un asesor para ayudarte mejor.\n\n## Datos minimos antes de escalar\n\n- Nombre\n- Documento\n- Motivo de contacto\n- Canal preferido',
+  },
+];
+
 export function KnowledgeBasePage() {
   const { showSuccess, showInfo } = useNotification();
   const [articles, setArticles] = useState<KBArticle[]>(mockKBArticles);
@@ -131,6 +168,27 @@ export function KnowledgeBasePage() {
     setEditMode(true);
   }
 
+  function handleQuickArticleCreate(template: QuickKBArticle) {
+    const now = new Date().toISOString();
+    const art: KBArticle = {
+      id: `kb-quick-${Date.now()}`,
+      titulo: template.titulo,
+      categoria: template.categoria,
+      contenido: template.contenido,
+      tags: template.tags,
+      activo: true,
+      visitas: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    setArticles((prev) => [art, ...prev]);
+    setSelectedId(art.id);
+    setFormState(art);
+    setTagsInput(template.tags.join(', '));
+    setEditMode(true);
+    showSuccess('Plantilla base creada. Edita y guarda.');
+  }
+
   async function handleSave() {
     if (!formState) return;
     setSaving(true);
@@ -179,9 +237,53 @@ export function KnowledgeBasePage() {
   }
 
   const selectedArticle = articles.find((a) => a.id === selectedId);
+  const hasMinimumArticles = articles.length >= 3;
+  const hasTaggedArticles = articles.some((article) => article.tags.length >= 2);
+  const hasPublishedArticles = articles.some((article) => article.activo);
+  const kbGuideSteps = [
+    { label: '1. Carga 3 articulos base', done: hasMinimumArticles },
+    { label: '2. Etiqueta temas clave con tags', done: hasTaggedArticles },
+    { label: '3. Publica contenido para el bot', done: hasPublishedArticles },
+  ];
+  const kbGuideProgress = kbGuideSteps.filter((step) => step.done).length;
 
   return (
-    <div className="flex h-[calc(100vh-120px)] gap-0 overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-brand-100 bg-brand-50/60 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Modo guiado</p>
+            <h3 className="text-sm font-semibold text-slate-900">Prepara tu base de conocimiento en 3 pasos</h3>
+          </div>
+          <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-brand-700">
+            {kbGuideProgress}/3 completados
+          </span>
+        </div>
+        <div className="mt-3 grid gap-2 md:grid-cols-3">
+          {kbGuideSteps.map((step) => (
+            <div key={step.label} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+              {step.done ? <CheckCircle2 size={15} className="text-emerald-600" /> : <Circle size={15} className="text-slate-300" />}
+              <p className="text-xs text-slate-700">{step.label}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            onClick={() => handleQuickArticleCreate(QUICK_KB_ARTICLES[0])}
+            className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700"
+          >
+            Crear articulo recomendado
+          </button>
+          <button
+            onClick={handleNew}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+          >
+            Crear articulo vacio
+          </button>
+        </div>
+      </div>
+
+      <div className="flex h-[calc(100vh-120px)] gap-0 overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
       {/* LEFT COLUMN — Article list */}
       <div className="flex w-80 flex-shrink-0 flex-col border-r border-slate-200 bg-white">
         {/* Header */}
@@ -231,6 +333,21 @@ export function KnowledgeBasePage() {
               </button>
             ))}
           </div>
+          <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/60 p-2.5">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-brand-700">Empezar rapido</p>
+            <div className="space-y-1.5">
+              {QUICK_KB_ARTICLES.map((template) => (
+                <button
+                  key={template.id}
+                  onClick={() => handleQuickArticleCreate(template)}
+                  className="w-full rounded-lg border border-brand-100 bg-white px-2.5 py-2 text-left transition hover:border-brand-300 hover:bg-brand-50"
+                >
+                  <p className="text-xs font-semibold text-slate-900">{template.titulo}</p>
+                  <p className="text-[10px] text-slate-500">{template.tags.join(' · ')}</p>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Article list */}
@@ -271,9 +388,17 @@ export function KnowledgeBasePage() {
       {/* RIGHT COLUMN — Editor / Viewer */}
       <div className="flex flex-1 flex-col bg-slate-50">
         {!selectedId || !formState ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-slate-400">
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center text-slate-400">
             <BookOpen size={40} strokeWidth={1.5} />
-            <p className="text-sm font-medium">Selecciona un artículo o crea uno nuevo</p>
+            <p className="text-sm font-medium">Selecciona un articulo, crea uno nuevo o usa una plantilla.</p>
+            <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-4 text-left">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Guia rapida para pymes</p>
+              <ol className="mt-2 space-y-1.5 text-sm text-slate-600">
+                <li>1. Crea 3 articulos base: FAQ, politicas y escalamiento.</li>
+                <li>2. Usa tags cortos para que IA encuentre respuestas rapido.</li>
+                <li>3. Publica y valida en Inbox con casos reales.</li>
+              </ol>
+            </div>
           </div>
         ) : (
           <AnimatePresence mode="wait">
@@ -480,6 +605,7 @@ export function KnowledgeBasePage() {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }

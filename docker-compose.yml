@@ -1,0 +1,88 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: comfaguajira_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: comfa_user
+      POSTGRES_PASSWORD: comfa_pass
+      POSTGRES_DB: comfaguajira
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U comfa_user -d comfaguajira"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: comfaguajira_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: comfaguajira_api
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://comfa_user:comfa_pass@db:5432/comfaguajira
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  seed:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: comfaguajira_seed
+    command: python seed.py
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://comfa_user:comfa_pass@db:5432/comfaguajira
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - seed
+
+  frontend:
+    image: node:22-alpine
+    container_name: comfaguajira_frontend
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend-vite:/app
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      - api
+
+volumes:
+  pg_data:
+  frontend_node_modules:

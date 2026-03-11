@@ -7,6 +7,7 @@ import {
   CheckCircle,
   XCircle,
   X,
+  Users,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { mockCampaigns, mockTemplates } from '../data/mock';
@@ -39,6 +40,57 @@ interface Template {
   variables: string[];
   createdAt: string;
 }
+
+interface CampaignQuickStart {
+  id: string;
+  nombre: string;
+  tipo: string;
+  plantillaHint: string;
+  segmento: string;
+  objetivo: string;
+}
+
+interface AudiencePreset {
+  id: 'todos' | 'trabajadores' | 'pensionados' | 'independientes' | 'manual';
+  nombre: string;
+  descripcion: string;
+  total: number;
+}
+
+const CAMPAIGN_QUICK_STARTS: CampaignQuickStart[] = [
+  {
+    id: 'recordatorio-pago',
+    nombre: 'Recordatorio de pago',
+    tipo: 'utilidad',
+    plantillaHint: 'pago',
+    segmento: 'trabajadores',
+    objetivo: 'Bajar preguntas repetidas en inbox',
+  },
+  {
+    id: 'reactivacion-leads',
+    nombre: 'Reactivacion de interesados',
+    tipo: 'marketing',
+    plantillaHint: 'recreacion',
+    segmento: 'todos',
+    objetivo: 'Recuperar conversaciones sin cierre',
+  },
+  {
+    id: 'seguimiento-pqrs',
+    nombre: 'Seguimiento PQRS',
+    tipo: 'utilidad',
+    plantillaHint: 'tramite',
+    segmento: 'manual',
+    objetivo: 'Avisar estado y reducir reclamos',
+  },
+];
+
+const AUDIENCE_PRESETS: AudiencePreset[] = [
+  { id: 'todos', nombre: 'Todos los contactos', descripcion: 'Base completa activa', total: 48200 },
+  { id: 'trabajadores', nombre: 'Trabajadores activos', descripcion: 'Afiliados dependientes', total: 31500 },
+  { id: 'pensionados', nombre: 'Pensionados', descripcion: 'Segmento tercera edad', total: 8400 },
+  { id: 'independientes', nombre: 'Independientes', descripcion: 'Afiliados por cuenta propia', total: 7200 },
+  { id: 'manual', nombre: 'Lista manual', descripcion: 'Carga puntual por CSV/seleccion', total: 0 },
+];
 
 function formatDate(ts: string | null) {
   if (!ts) return '—';
@@ -103,17 +155,23 @@ function highlightVars(text: string) {
 }
 
 // New Campaign Modal (3 steps)
-function NewCampaignModal({ templates, onClose, onCreated }: {
+function NewCampaignModal({ templates, onClose, onCreated, initialDraft }: {
   templates: Template[];
   onClose: () => void;
   onCreated: (c: Campaign) => void;
+  initialDraft?: Partial<{
+    nombre: string;
+    tipo: string;
+    plantillaId: string;
+    segmento: string;
+  }>;
 }) {
   const { showSuccess } = useNotification();
   const [step, setStep] = useState(1);
-  const [nombre, setNombre] = useState('');
-  const [tipo, setTipo] = useState('utilidad');
-  const [plantillaId, setPlantillaId] = useState(templates[0]?.id ?? '');
-  const [segmento, setSegmento] = useState('todos');
+  const [nombre, setNombre] = useState(initialDraft?.nombre ?? '');
+  const [tipo, setTipo] = useState(initialDraft?.tipo ?? 'utilidad');
+  const [plantillaId, setPlantillaId] = useState(initialDraft?.plantillaId ?? templates[0]?.id ?? '');
+  const [segmento, setSegmento] = useState(initialDraft?.segmento ?? 'todos');
   const [scheduleMode, setScheduleMode] = useState<'ahora' | 'programar'>('ahora');
   const [scheduledAt, setScheduledAt] = useState('');
 
@@ -510,6 +568,12 @@ export function CampaignsPage() {
   const [showNewCampaign, setShowNewCampaign] = useState(false);
   const [showNewTemplate, setShowNewTemplate] = useState(false);
   const [hoveredTemplateId, setHoveredTemplateId] = useState<string | null>(null);
+  const [newCampaignDraft, setNewCampaignDraft] = useState<Partial<{
+    nombre: string;
+    tipo: string;
+    plantillaId: string;
+    segmento: string;
+  }> | null>(null);
 
   const stats = {
     total: campaigns.length,
@@ -536,8 +600,76 @@ export function CampaignsPage() {
     return templates.find((t) => t.id === id)?.nombre ?? id;
   }
 
+  function findTemplateIdByHint(hint: string) {
+    return templates.find((t) => t.nombre.includes(hint) || t.contenido.toLowerCase().includes(hint))?.id ?? templates[0]?.id ?? '';
+  }
+
+  function launchQuickStart(item: CampaignQuickStart) {
+    setNewCampaignDraft({
+      nombre: item.nombre,
+      tipo: item.tipo,
+      plantillaId: findTemplateIdByHint(item.plantillaHint),
+      segmento: item.segmento,
+    });
+    setShowNewCampaign(true);
+  }
+
+  function launchWithAudience(audience: AudiencePreset) {
+    setNewCampaignDraft({
+      nombre: `Campana ${audience.nombre}`,
+      tipo: 'utilidad',
+      plantillaId: templates[0]?.id ?? '',
+      segmento: audience.id,
+    });
+    setShowNewCampaign(true);
+  }
+
+  const hasApprovedTemplate = templates.some((template) => template.estado === 'approved');
+  const hasCampaignLaunched = campaigns.some((campaign) => campaign.estado !== 'borrador');
+  const hasPerformanceData = campaigns.some((campaign) => campaign.leidos > 0 || campaign.respondidos > 0);
+  const campaignGuideSteps = [
+    { label: '1. Asegura al menos una plantilla aprobada', done: hasApprovedTemplate },
+    { label: '2. Lanza tu primera campana segmentada', done: hasCampaignLaunched },
+    { label: '3. Revisa lectura y respuestas', done: hasPerformanceData },
+  ];
+  const campaignGuideProgress = campaignGuideSteps.filter((step) => step.done).length;
+
   return (
     <div className="space-y-6">
+      <div className="rounded-2xl border border-brand-100 bg-brand-50/60 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Modo guiado</p>
+            <h3 className="text-sm font-semibold text-slate-900">Lanza campanas utiles en 3 pasos</h3>
+          </div>
+          <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-brand-700">
+            {campaignGuideProgress}/3 completados
+          </span>
+        </div>
+        <div className="mt-3 grid gap-2 md:grid-cols-3">
+          {campaignGuideSteps.map((step) => (
+            <div key={step.label} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+              {step.done ? <CheckCircle size={15} className="text-emerald-600" /> : <Clock size={15} className="text-slate-300" />}
+              <p className="text-xs text-slate-700">{step.label}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            onClick={() => launchQuickStart(CAMPAIGN_QUICK_STARTS[0])}
+            className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700"
+          >
+            Crear campana recomendada
+          </button>
+          <button
+            onClick={() => setTab('plantillas')}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+          >
+            Revisar plantillas
+          </button>
+        </div>
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -562,6 +694,59 @@ export function CampaignsPage() {
 
       {tab === 'campanas' && (
         <>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-2">
+              <Users size={15} className="text-brand-600" />
+              <p className="text-sm font-semibold text-slate-900">Audiencias para campanas</p>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                Se definen al crear campana (Paso 2)
+              </span>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              {AUDIENCE_PRESETS.map((audience) => (
+                <button
+                  key={audience.id}
+                  onClick={() => launchWithAudience(audience)}
+                  className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-brand-200 hover:bg-brand-50/40"
+                >
+                  <p className="text-sm font-semibold text-slate-900">{audience.nombre}</p>
+                  <p className="mt-1 text-xs text-slate-500">{audience.descripcion}</p>
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-brand-700">
+                      {audience.total > 0 ? `${audience.total.toLocaleString()} contactos` : 'Segmento manual'}
+                    </span>
+                    <span className="text-[11px] font-semibold text-slate-500">Usar</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-brand-100 bg-brand-50/60 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Lanzamiento rapido</p>
+                <p className="text-sm text-slate-600">Elige un objetivo y arranca una campana en menos de 2 minutos.</p>
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              {CAMPAIGN_QUICK_STARTS.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => launchQuickStart(item)}
+                  className="rounded-xl border border-brand-100 bg-white p-3 text-left transition hover:border-brand-300 hover:bg-brand-50"
+                >
+                  <p className="text-sm font-semibold text-slate-900">{item.nombre}</p>
+                  <p className="mt-1 text-xs text-slate-500">{item.objetivo}</p>
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{item.tipo}</span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{item.segmento}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Stats */}
           <div className="grid gap-4 sm:grid-cols-4">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -587,7 +772,10 @@ export function CampaignsPage() {
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <p className="font-bold text-slate-900">Campañas</p>
               <button
-                onClick={() => setShowNewCampaign(true)}
+                onClick={() => {
+                  setNewCampaignDraft(null);
+                  setShowNewCampaign(true);
+                }}
                 className="flex items-center gap-1.5 rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 transition"
               >
                 <Plus size={14} /> Nueva campaña
@@ -740,8 +928,12 @@ export function CampaignsPage() {
         {showNewCampaign && (
           <NewCampaignModal
             templates={templates}
-            onClose={() => setShowNewCampaign(false)}
+            onClose={() => {
+              setShowNewCampaign(false);
+              setNewCampaignDraft(null);
+            }}
             onCreated={(c) => setCampaigns((prev) => [c, ...prev])}
+            initialDraft={newCampaignDraft ?? undefined}
           />
         )}
         {showNewTemplate && (

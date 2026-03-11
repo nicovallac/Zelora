@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
-import type { Channel, Status, Sentiment } from '../../types';
+import type { Channel, OrderStatus, Sentiment, Status, StockStatus } from '../../types';
 
 export function Card({ children, className = '' }: PropsWithChildren<{ className?: string }>) {
   return (
@@ -95,6 +95,39 @@ const sentimentConfig: Record<Sentiment, { label: string; className: string }> =
 
 export function SentimentBadge({ sentiment }: { sentiment: Sentiment }) {
   const cfg = sentimentConfig[sentiment];
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${cfg.className}`}>
+      {cfg.label}
+    </span>
+  );
+}
+
+const stockConfig: Record<StockStatus, { label: string; className: string }> = {
+  in_stock: { label: 'En stock', className: 'bg-emerald-100 text-emerald-800' },
+  low_stock: { label: 'Stock bajo', className: 'bg-amber-100 text-amber-800' },
+  out_of_stock: { label: 'Agotado', className: 'bg-red-100 text-red-800' },
+};
+
+export function StockBadge({ status }: { status: StockStatus }) {
+  const cfg = stockConfig[status];
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${cfg.className}`}>
+      {cfg.label}
+    </span>
+  );
+}
+
+const orderStatusConfig: Record<OrderStatus, { label: string; className: string }> = {
+  new: { label: 'Nuevo', className: 'bg-blue-100 text-blue-800' },
+  paid: { label: 'Pagado', className: 'bg-violet-100 text-violet-800' },
+  processing: { label: 'En preparacion', className: 'bg-amber-100 text-amber-800' },
+  shipped: { label: 'Enviado', className: 'bg-cyan-100 text-cyan-800' },
+  delivered: { label: 'Entregado', className: 'bg-emerald-100 text-emerald-800' },
+  cancelled: { label: 'Cancelado', className: 'bg-red-100 text-red-800' },
+};
+
+export function OrderStatusBadge({ status }: { status: OrderStatus }) {
+  const cfg = orderStatusConfig[status];
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${cfg.className}`}>
       {cfg.label}

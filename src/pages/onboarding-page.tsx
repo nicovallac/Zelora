@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -6,6 +6,7 @@ import {
   ChevronLeft, Check, Globe, Instagram, Mail, Send, MessageSquare,
   Upload, Plus, Trash2, Sparkles, ArrowRight, Lock
 } from 'lucide-react';
+import { BarChart3, Plug, GitBranch, Inbox, Brain, Megaphone } from 'lucide-react';
 
 const STEPS = [
   { id: 1, title: 'Tu organización', description: 'Datos básicos de tu empresa', icon: Building2 },
@@ -18,6 +19,22 @@ const STEPS = [
 const INDUSTRIES = [
   'Caja de compensación', 'Salud y EPS', 'Banca y finanzas', 'Retail',
   'Educación', 'Gobierno', 'Telecomunicaciones', 'Seguros', 'Otro',
+];
+
+const BUSINESS_SIZES = [
+  { id: 'micro', label: 'Micro', hint: '1-10 personas' },
+  { id: 'small', label: 'Pequena', hint: '11-50 personas' },
+  { id: 'medium', label: 'Mediana', hint: '51-200 personas' },
+  { id: 'sme', label: 'PyME', hint: 'Escala flexible' },
+];
+
+const PREVIEW_MODULES = [
+  { id: 'inbox', name: 'Inbox Omnicanal', desc: 'Atencion unificada por canal.', icon: Inbox, requiredStep: 1, audience: 'Micro y pequena' },
+  { id: 'workspace', name: 'AI Workspace', desc: 'Sales, Marketing y Operations IA.', icon: Brain, requiredStep: 2, audience: 'Todas' },
+  { id: 'analytics', name: 'Analytics BI', desc: 'KPIs para decisiones rapidas.', icon: BarChart3, requiredStep: 2, audience: 'Pequena y mediana' },
+  { id: 'campaigns', name: 'Campanas', desc: 'Promociones y mensajes por segmento.', icon: Megaphone, requiredStep: 3, audience: 'Pequena y mediana' },
+  { id: 'flows', name: 'Flow Builder', desc: 'Automatizaciones por escenario.', icon: GitBranch, requiredStep: 4, audience: 'PyME y mediana' },
+  { id: 'integrations', name: 'Integraciones', desc: 'Conecta ERP, CRM y fuentes.', icon: Plug, requiredStep: 4, audience: 'Mediana y PyME' },
 ];
 
 const CHANNELS = [
@@ -61,6 +78,7 @@ const CHANNELS = [
 
 interface TeamMember { email: string; role: 'admin' | 'supervisor' | 'asesor'; }
 interface KBTopic { title: string; content: string; }
+const ONBOARDING_STORAGE_KEY = 'vendly_onboarding_state_v1';
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
@@ -69,6 +87,7 @@ export default function OnboardingPage() {
   // Step 1 state
   const [orgName, setOrgName] = useState('');
   const [industry, setIndustry] = useState('');
+  const [businessSize, setBusinessSize] = useState('micro');
   const [country, setCountry] = useState('Colombia');
   const [website, setWebsite] = useState('');
 
@@ -86,9 +105,12 @@ export default function OnboardingPage() {
   ]);
 
   const [completing, setCompleting] = useState(false);
+  const [unlockedModules, setUnlockedModules] = useState<string[]>([]);
+  const [recentlyUnlockedId, setRecentlyUnlockedId] = useState<string | null>(null);
+  const [tourModuleId, setTourModuleId] = useState<string | null>(null);
 
   const canNext = () => {
-    if (step === 1) return orgName.trim().length >= 2 && industry;
+    if (step === 1) return orgName.trim().length >= 2 && industry && businessSize;
     if (step === 2) return selectedChannels.length > 0;
     return true;
   };
@@ -102,7 +124,10 @@ export default function OnboardingPage() {
 
   const handleComplete = () => {
     setCompleting(true);
-    setTimeout(() => navigate('/'), 2000);
+    setTimeout(() => {
+      localStorage.removeItem(ONBOARDING_STORAGE_KEY);
+      navigate('/');
+    }, 2000);
   };
 
   const toggleChannel = (id: string) => {
@@ -120,9 +145,80 @@ export default function OnboardingPage() {
   const addTopic = () => setKbTopics(prev => [...prev, { title: '', content: '' }]);
   const removeTopic = (i: number) => setKbTopics(prev => prev.filter((_, idx) => idx !== i));
 
+  const isModuleAvailable = (requiredStep: number) => step >= requiredStep;
+  const isModuleUnlocked = (id: string) => unlockedModules.includes(id);
+  const unlockModule = (id: string, requiredStep: number) => {
+    if (!isModuleAvailable(requiredStep)) return;
+    setUnlockedModules(prev => {
+      if (prev.includes(id)) return prev;
+      setRecentlyUnlockedId(id);
+      setTourModuleId(id);
+      return [...prev, id];
+    });
+  };
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(ONBOARDING_STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as {
+        step?: number;
+        orgName?: string;
+        industry?: string;
+        businessSize?: string;
+        country?: string;
+        website?: string;
+        selectedChannels?: string[];
+        teamMembers?: TeamMember[];
+        kbTopics?: KBTopic[];
+        unlockedModules?: string[];
+      };
+      if (saved.step) setStep(saved.step);
+      if (saved.orgName) setOrgName(saved.orgName);
+      if (saved.industry) setIndustry(saved.industry);
+      if (saved.businessSize) setBusinessSize(saved.businessSize);
+      if (saved.country) setCountry(saved.country);
+      if (saved.website) setWebsite(saved.website);
+      if (saved.selectedChannels?.length) setSelectedChannels(saved.selectedChannels);
+      if (saved.teamMembers?.length) setTeamMembers(saved.teamMembers);
+      if (saved.kbTopics?.length) setKbTopics(saved.kbTopics);
+      if (saved.unlockedModules?.length) setUnlockedModules(saved.unlockedModules);
+    } catch {
+      // ignore corrupt cache
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        ONBOARDING_STORAGE_KEY,
+        JSON.stringify({
+          step,
+          orgName,
+          industry,
+          businessSize,
+          country,
+          website,
+          selectedChannels,
+          teamMembers,
+          kbTopics,
+          unlockedModules,
+        })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [businessSize, country, industry, kbTopics, orgName, selectedChannels, step, teamMembers, unlockedModules, website]);
+
+  useEffect(() => {
+    if (!recentlyUnlockedId) return;
+    const timer = setTimeout(() => setRecentlyUnlockedId(null), 1200);
+    return () => clearTimeout(timer);
+  }, [recentlyUnlockedId]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-brand-50 via-white to-sky-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-6xl">
         {/* Logo */}
         <div className="flex justify-center mb-8">
           <div className="flex items-center gap-2">
@@ -156,6 +252,7 @@ export default function OnboardingPage() {
           ))}
         </div>
 
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,720px)_minmax(0,1fr)]">
         {/* Card */}
         <div className="bg-white rounded-2xl border border-ink-100 shadow-lg overflow-hidden">
           <AnimatePresence mode="wait">
@@ -202,6 +299,25 @@ export default function OnboardingPage() {
                           }`}
                         >
                           {ind}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-ink-600 mb-1.5">Tamano de empresa *</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {BUSINESS_SIZES.map(size => (
+                        <button
+                          key={size.id}
+                          onClick={() => setBusinessSize(size.id)}
+                          className={`rounded-lg border px-3 py-2 text-left transition ${
+                            businessSize === size.id
+                              ? 'border-brand-500 bg-brand-50'
+                              : 'border-ink-200 hover:border-brand-300 hover:bg-brand-50/50'
+                          }`}
+                        >
+                          <p className={`text-xs font-semibold ${businessSize === size.id ? 'text-brand-700' : 'text-ink-700'}`}>{size.label}</p>
+                          <p className="text-[11px] text-ink-500">{size.hint}</p>
                         </button>
                       ))}
                     </div>
@@ -441,6 +557,101 @@ export default function OnboardingPage() {
               </button>
             </div>
           )}
+        </div>
+        <aside className="rounded-2xl border border-ink-200 bg-white/90 p-4 shadow-sm">
+          <div className="mb-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Vista desbloqueable</p>
+            <h3 className="text-lg font-bold text-ink-900 mt-1">Tu plataforma por etapas</h3>
+            <p className="text-xs text-ink-500 mt-1">
+              Pensado para micro, pequena, mediana y pyme: avanza paso a paso y desbloquea modulos con click.
+            </p>
+          </div>
+
+          <div className="mb-3 rounded-xl border border-ink-100 bg-ink-50 p-3">
+            <p className="text-xs font-semibold text-ink-700">Segmento actual</p>
+            <p className="text-sm font-bold text-ink-900">
+              {BUSINESS_SIZES.find((s) => s.id === businessSize)?.label} · {BUSINESS_SIZES.find((s) => s.id === businessSize)?.hint}
+            </p>
+            <p className="text-xs text-ink-500 mt-1">Paso {step} de {STEPS.length}</p>
+          </div>
+
+          <div className="space-y-2">
+            {PREVIEW_MODULES.map((module) => {
+              const available = isModuleAvailable(module.requiredStep);
+              const unlocked = isModuleUnlocked(module.id);
+              const Icon = module.icon;
+              const isNew = recentlyUnlockedId === module.id;
+              return (
+                <button
+                  key={module.id}
+                  onClick={() => unlockModule(module.id, module.requiredStep)}
+                  className={`w-full text-left rounded-xl border bg-white p-3 transition hover:border-brand-300 ${
+                    isNew ? 'border-emerald-300 ring-2 ring-emerald-100 animate-pulse' : 'border-ink-200'
+                  }`}
+                >
+                  <div className={`relative ${available && unlocked ? '' : available ? 'blur-[1px]' : 'blur-[2px]'} transition-all`}>
+                    <div className="flex items-start gap-3">
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${available && unlocked ? 'bg-brand-100 text-brand-700' : 'bg-ink-100 text-ink-500'}`}>
+                        <Icon size={16} />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-ink-900">{module.name}</p>
+                        <p className="text-xs text-ink-500 mt-0.5">{module.desc}</p>
+                        <p className="text-[11px] text-ink-400 mt-1">Ideal para: {module.audience}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {!available && (
+                    <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-ink-100 px-2 py-1 text-[11px] font-semibold text-ink-600">
+                      <Lock size={11} />
+                      Se habilita en paso {module.requiredStep}
+                    </div>
+                  )}
+                  {available && !unlocked && (
+                    <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-1 text-[11px] font-semibold text-brand-700">
+                      Click para desbloquear
+                    </div>
+                  )}
+                  {available && unlocked && (
+                    <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                      <Check size={11} />
+                      Modulo desbloqueado
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <AnimatePresence>
+            {tourModuleId && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                className="mt-4 rounded-xl border border-brand-200 bg-brand-50 p-3"
+              >
+                <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">Mini tour</p>
+                <p className="text-sm font-bold text-brand-900 mt-1">
+                  {PREVIEW_MODULES.find((m) => m.id === tourModuleId)?.name} desbloqueado
+                </p>
+                <p className="text-xs text-brand-800 mt-1">
+                  {PREVIEW_MODULES.find((m) => m.id === tourModuleId)?.desc}
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    onClick={() => setTourModuleId(null)}
+                    className="rounded-md bg-brand-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-brand-700"
+                  >
+                    Entendido
+                  </button>
+                  <span className="text-[11px] text-brand-700">Siguiente: completa el paso {Math.min(step + 1, 5)} para desbloquear más.</span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </aside>
         </div>
 
         <p className="text-center text-xs text-ink-400 mt-6">

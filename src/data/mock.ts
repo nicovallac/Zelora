@@ -9,9 +9,9 @@ export const heroKpis = [
 
 export const navItems: NavItem[] = [
   // Main
-  { label: 'Dashboard', path: '/', icon: 'LayoutDashboard', audience: 'all' },
+  { label: 'Dashboard (Operativo)', path: '/', icon: 'LayoutDashboard', audience: 'all' },
   { label: 'Inbox', path: '/inbox', icon: 'MessageSquare', audience: 'all' },
-  { label: 'Analytics', path: '/analytics', icon: 'BarChart3', audience: 'all' },
+  { label: 'Analytics (Historico)', path: '/analytics', icon: 'BarChart3', audience: 'all' },
   // Contenido
   { label: 'Base de conocimiento', path: '/knowledge-base', icon: 'BookOpen', audience: 'all' },
   { label: 'Campañas', path: '/campaigns', icon: 'Megaphone', audience: 'all' },
@@ -419,7 +419,7 @@ export const mockCampaigns = [
 ];
 
 // Flow builder mock
-export type FlowNodeType = 'start' | 'message' | 'condition' | 'quickReply' | 'collect' | 'escalate' | 'end' | 'api';
+export type FlowNodeType = 'start' | 'message' | 'condition' | 'quickReply' | 'collect' | 'escalate' | 'end' | 'api' | 'delay' | 'media' | 'tag';
 export const mockFlows = [
   {
     id: 'flow1',

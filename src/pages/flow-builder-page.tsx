@@ -11,6 +11,16 @@ import {
   Plus,
   X,
   Bot,
+  Sparkles,
+  CheckCircle2,
+  Circle,
+  Minus,
+  RotateCcw,
+  Trash2,
+  AlertTriangle,
+  ImageIcon,
+  Tags,
+  Clock,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { mockFlows } from '../data/mock';
@@ -26,6 +36,10 @@ interface FlowNode {
   variable?: string;
   pregunta?: string;
   endpoint?: string;
+  delayMs?: number;
+  mediaType?: 'image' | 'pdf' | 'video';
+  mediaUrl?: string;
+  tagValue?: string;
   x: number;
   y: number;
 }
@@ -42,11 +56,51 @@ interface Flow {
   nombre: string;
   descripcion: string;
   activo: boolean;
-  canal: string;
+  canales: Array<'web' | 'whatsapp' | 'instagram' | 'tiktok' | 'app-chat'>;
   nodes: FlowNode[];
   edges: FlowEdge[];
   createdAt: string;
 }
+
+interface QuickFlowTemplate {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  canales: Array<'web' | 'whatsapp' | 'instagram' | 'tiktok' | 'app-chat'>;
+  greeting: string;
+}
+
+const QUICK_FLOW_TEMPLATES: QuickFlowTemplate[] = [
+  {
+    id: 'subsidio',
+    nombre: 'Consulta subsidio',
+    descripcion: 'Valida cedula y responde estado de pago',
+    canales: ['whatsapp'],
+    greeting: 'Hola, te ayudo a consultar tu subsidio familiar.',
+  },
+  {
+    id: 'certificado',
+    nombre: 'Solicitud certificado',
+    descripcion: 'Pide documento y envia certificado',
+    canales: ['web'],
+    greeting: 'Hola, te ayudo a descargar tu certificado.',
+  },
+  {
+    id: 'pqrs',
+    nombre: 'Radicar PQRS',
+    descripcion: 'Toma datos y escala a asesor',
+    canales: ['whatsapp', 'instagram'],
+    greeting: 'Hola, vamos a registrar tu solicitud PQRS.',
+  },
+];
+
+const CHANNEL_OPTIONS: Array<{ id: 'web' | 'whatsapp' | 'instagram' | 'tiktok' | 'app-chat'; label: string; className: string }> = [
+  { id: 'web', label: 'Web', className: 'bg-blue-100 text-blue-700' },
+  { id: 'whatsapp', label: 'WhatsApp', className: 'bg-emerald-100 text-emerald-700' },
+  { id: 'instagram', label: 'Instagram', className: 'bg-pink-100 text-pink-700' },
+  { id: 'tiktok', label: 'TikTok', className: 'bg-slate-100 text-slate-700' },
+  { id: 'app-chat', label: 'App Chat', className: 'bg-violet-100 text-violet-700' },
+];
 
 const NODE_CONFIG: Record<FlowNodeType, { color: string; bg: string; border: string; icon: React.ReactNode; shape: 'circle' | 'rect' | 'diamond' }> = {
   start: { color: 'text-emerald-700', bg: 'bg-emerald-100', border: 'border-emerald-300', icon: <Play size={14} />, shape: 'circle' },
@@ -55,11 +109,14 @@ const NODE_CONFIG: Record<FlowNodeType, { color: string; bg: string; border: str
   collect: { color: 'text-amber-700', bg: 'bg-amber-100', border: 'border-amber-300', icon: <Edit3 size={14} />, shape: 'rect' },
   condition: { color: 'text-orange-700', bg: 'bg-orange-100', border: 'border-orange-300', icon: <GitBranch size={14} />, shape: 'diamond' },
   api: { color: 'text-violet-700', bg: 'bg-violet-100', border: 'border-violet-300', icon: <Zap size={14} />, shape: 'rect' },
+  delay: { color: 'text-indigo-700', bg: 'bg-indigo-100', border: 'border-indigo-300', icon: <Clock size={14} />, shape: 'rect' },
+  media: { color: 'text-fuchsia-700', bg: 'bg-fuchsia-100', border: 'border-fuchsia-300', icon: <ImageIcon size={14} />, shape: 'rect' },
+  tag: { color: 'text-teal-700', bg: 'bg-teal-100', border: 'border-teal-300', icon: <Tags size={14} />, shape: 'rect' },
   escalate: { color: 'text-red-700', bg: 'bg-red-100', border: 'border-red-300', icon: <ArrowUpRight size={14} />, shape: 'rect' },
   end: { color: 'text-slate-600', bg: 'bg-slate-100', border: 'border-slate-300', icon: <Square size={14} />, shape: 'circle' },
 };
 
-const NODE_TYPES_LIST: FlowNodeType[] = ['message', 'quickReply', 'collect', 'condition', 'api', 'escalate', 'end'];
+const NODE_TYPES_LIST: FlowNodeType[] = ['message', 'quickReply', 'collect', 'condition', 'api', 'delay', 'media', 'tag', 'escalate', 'end'];
 const NODE_WIDTH = 180;
 const NODE_HEIGHT = 72;
 const CANVAS_W = 600;
@@ -72,22 +129,34 @@ function nodeCenter(node: FlowNode) {
   };
 }
 
-function FlowNodeCard({ node, isSelected, onClick }: {
+function FlowNodeCard({ node, isSelected, onClick, onPointerDown, onLinkStart, onLinkComplete }: {
   node: FlowNode;
   isSelected: boolean;
   onClick: () => void;
+  onPointerDown: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onLinkStart: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  onLinkComplete: () => void;
 }) {
   const cfg = NODE_CONFIG[node.tipo];
 
   if (cfg.shape === 'circle') {
     return (
       <div
+        onMouseDown={onPointerDown}
+        onMouseUp={onLinkComplete}
         onClick={onClick}
         style={{ left: node.x, top: node.y, width: NODE_WIDTH, height: NODE_HEIGHT }}
-        className={`absolute flex cursor-pointer flex-col items-center justify-center rounded-full border-2 transition ${cfg.bg} ${cfg.border} ${isSelected ? 'ring-2 ring-brand-400 ring-offset-2' : 'hover:shadow-md'}`}
+        className={`absolute flex cursor-grab flex-col items-center justify-center overflow-visible rounded-full border-2 transition active:cursor-grabbing ${cfg.bg} ${cfg.border} ${isSelected ? 'ring-2 ring-brand-400 ring-offset-2' : 'hover:shadow-md'}`}
       >
         <div className={`${cfg.color} mb-0.5`}>{cfg.icon}</div>
         <p className={`text-xs font-bold ${cfg.color}`}>{node.label}</p>
+        {node.tipo !== 'end' && (
+          <button
+            onMouseDown={onLinkStart}
+            className="absolute -right-2 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full border border-brand-300 bg-white text-brand-600 shadow-sm transition hover:scale-110"
+            title="Conectar con otro nodo"
+          />
+        )}
       </div>
     );
   }
@@ -95,9 +164,11 @@ function FlowNodeCard({ node, isSelected, onClick }: {
   if (cfg.shape === 'diamond') {
     return (
       <div
+        onMouseDown={onPointerDown}
+        onMouseUp={onLinkComplete}
         onClick={onClick}
         style={{ left: node.x, top: node.y, width: NODE_WIDTH, height: NODE_HEIGHT }}
-        className={`absolute cursor-pointer ${isSelected ? 'ring-2 ring-brand-400 ring-offset-2 rounded-lg' : ''}`}
+        className={`absolute cursor-grab active:cursor-grabbing ${isSelected ? 'ring-2 ring-brand-400 ring-offset-2 rounded-lg' : ''}`}
       >
         <div
           className={`absolute inset-0 rounded-lg border-2 ${cfg.bg} ${cfg.border}`}
@@ -106,6 +177,13 @@ function FlowNodeCard({ node, isSelected, onClick }: {
         <div className="relative flex h-full flex-col items-center justify-center gap-0.5">
           <div className={cfg.color}>{cfg.icon}</div>
           <p className={`text-xs font-bold ${cfg.color}`}>{node.label}</p>
+          {node.tipo !== 'end' && (
+            <button
+              onMouseDown={onLinkStart}
+              className="absolute -right-2 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full border border-brand-300 bg-white text-brand-600 shadow-sm transition hover:scale-110"
+              title="Conectar con otro nodo"
+            />
+          )}
         </div>
       </div>
     );
@@ -113,9 +191,11 @@ function FlowNodeCard({ node, isSelected, onClick }: {
 
   return (
     <div
+      onMouseDown={onPointerDown}
+      onMouseUp={onLinkComplete}
       onClick={onClick}
       style={{ left: node.x, top: node.y, width: NODE_WIDTH }}
-      className={`absolute cursor-pointer rounded-xl border-2 p-3 transition ${cfg.bg} ${cfg.border} ${isSelected ? 'ring-2 ring-brand-400 ring-offset-2' : 'hover:shadow-md'}`}
+      className={`absolute cursor-grab overflow-visible rounded-xl border-2 p-3 transition active:cursor-grabbing ${cfg.bg} ${cfg.border} ${isSelected ? 'ring-2 ring-brand-400 ring-offset-2' : 'hover:shadow-md'}`}
     >
       <div className={`mb-1 flex items-center gap-1.5 ${cfg.color}`}>
         {cfg.icon}
@@ -140,6 +220,22 @@ function FlowNodeCard({ node, isSelected, onClick }: {
       {node.endpoint && (
         <p className="truncate text-[10px] font-mono text-slate-500">{node.endpoint}</p>
       )}
+      {node.delayMs !== undefined && (
+        <p className="text-[10px] text-slate-500">espera: {node.delayMs} ms</p>
+      )}
+      {node.mediaType && (
+        <p className="truncate text-[10px] text-slate-500">{node.mediaType}: {node.mediaUrl ?? 'sin URL'}</p>
+      )}
+      {node.tagValue && (
+        <p className="text-[10px] text-slate-500">tag: <span className="font-semibold">{node.tagValue}</span></p>
+      )}
+      {node.tipo !== 'end' && (
+        <button
+          onMouseDown={onLinkStart}
+          className="absolute -right-2 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full border border-brand-300 bg-white text-brand-600 shadow-sm transition hover:scale-110"
+          title="Conectar con otro nodo"
+        />
+      )}
     </div>
   );
 }
@@ -149,6 +245,8 @@ function SimulationModal({ flow, onClose }: { flow: Flow; onClose: () => void })
   const [step, setStep] = useState(0);
   const [messages, setMessages] = useState<{ role: 'bot' | 'user'; text: string }[]>([]);
   const [started, setStarted] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const runRef = useRef(false);
 
   function getNodeById(id: string) {
     return flow.nodes.find((n) => n.id === id);
@@ -157,13 +255,9 @@ function SimulationModal({ flow, onClose }: { flow: Flow; onClose: () => void })
     return flow.edges.filter((e) => e.source === nodeId).map((e) => getNodeById(e.target)).filter(Boolean);
   }
 
-  function start() {
-    setStarted(true);
-    setMessages([]);
-    setStep(0);
+  function buildSequence() {
     const startNode = flow.nodes.find((n) => n.tipo === 'start');
-    if (!startNode) return;
-    // Play through first few nodes
+    if (!startNode) return [] as { role: 'bot' | 'user'; text: string }[];
     const sequence: { role: 'bot' | 'user'; text: string }[] = [];
     let current = startNode;
     let depth = 0;
@@ -180,6 +274,12 @@ function SimulationModal({ flow, onClose }: { flow: Flow; onClose: () => void })
         sequence.push({ role: 'user', text: `[${current.variable ?? 'dato'}]` });
       } else if (current.tipo === 'api') {
         sequence.push({ role: 'bot', text: `Consultando ${current.endpoint ?? 'sistema'}...` });
+      } else if (current.tipo === 'delay') {
+        sequence.push({ role: 'bot', text: `Esperando ${Math.round((current.delayMs ?? 3000) / 1000)} segundos...` });
+      } else if (current.tipo === 'media') {
+        sequence.push({ role: 'bot', text: `Enviando ${current.mediaType ?? 'archivo'}: ${current.mediaUrl ?? 'recurso adjunto'}` });
+      } else if (current.tipo === 'tag') {
+        sequence.push({ role: 'bot', text: `Etiqueta aplicada: ${current.tagValue ?? 'sin_tag'}` });
       } else if (current.tipo === 'end') {
         sequence.push({ role: 'bot', text: 'Conversación finalizada. ¡Hasta luego!' });
         break;
@@ -189,8 +289,35 @@ function SimulationModal({ flow, onClose }: { flow: Flow; onClose: () => void })
       current = nexts[0] as FlowNode;
       depth++;
     }
-    setMessages(sequence);
-    setStep(sequence.length);
+    return sequence;
+  }
+
+  async function start() {
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    setStarted(true);
+    setMessages([]);
+    setStep(0);
+    setIsTyping(false);
+    runRef.current = true;
+
+    const sequence = buildSequence();
+    for (const msg of sequence) {
+      if (!runRef.current) return;
+      if (msg.role === 'bot') {
+        setIsTyping(true);
+        await delay(650);
+      }
+      if (!runRef.current) return;
+      setIsTyping(false);
+      setMessages((prev) => [...prev, msg]);
+      setStep((prev) => prev + 1);
+      await delay(msg.role === 'bot' ? 500 : 350);
+    }
+  }
+
+  function stop() {
+    runRef.current = false;
+    setIsTyping(false);
   }
 
   return (
@@ -234,6 +361,13 @@ function SimulationModal({ flow, onClose }: { flow: Flow; onClose: () => void })
               </div>
             </div>
           ))}
+          {isTyping && (
+            <div className="flex flex-row-reverse">
+              <div className="rounded-2xl rounded-br-sm bg-brand-600 px-3.5 py-2.5 text-sm text-white">
+                escribiendo...
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-3 border-t border-slate-100 px-5 py-4">
@@ -243,7 +377,13 @@ function SimulationModal({ flow, onClose }: { flow: Flow; onClose: () => void })
           >
             <Play size={14} /> {started ? 'Reiniciar' : 'Iniciar simulación'}
           </button>
-          <button onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition">
+          <button
+            onClick={() => {
+              stop();
+              onClose();
+            }}
+            className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
+          >
             Cerrar
           </button>
         </div>
@@ -254,11 +394,26 @@ function SimulationModal({ flow, onClose }: { flow: Flow; onClose: () => void })
 
 export function FlowBuilderPage() {
   const { showSuccess, showInfo } = useNotification();
-  const [flows, setFlows] = useState<Flow[]>(mockFlows as unknown as Flow[]);
+  const [flows, setFlows] = useState<Flow[]>(() =>
+    (mockFlows as unknown as Array<Record<string, unknown>>).map((flow) => ({
+      ...(flow as unknown as Flow),
+      canales: Array.isArray((flow as { canales?: unknown }).canales)
+        ? ((flow as { canales: Flow['canales'] }).canales)
+        : ([(flow as { canal?: Flow['canales'][number] }).canal ?? 'whatsapp'] as Flow['canales']),
+    }))
+  );
   const [activeFlowId, setActiveFlowId] = useState(flows[0]?.id ?? '');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [showSimulation, setShowSimulation] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const canvasPlaneRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState<{ nodeId: string; offsetX: number; offsetY: number } | null>(null);
+  const [linking, setLinking] = useState<{ sourceId: string; x: number; y: number } | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [showDeleteNodeConfirm, setShowDeleteNodeConfirm] = useState(false);
+  const [showDeleteFlowConfirm, setShowDeleteFlowConfirm] = useState(false);
+  const [deleteFlowAcknowledge, setDeleteFlowAcknowledge] = useState(false);
+  const [deleteFlowInput, setDeleteFlowInput] = useState('');
 
   const activeFlow = flows.find((f) => f.id === activeFlowId) ?? flows[0];
   const selectedNode = activeFlow?.nodes.find((n) => n.id === selectedNodeId) ?? null;
@@ -267,23 +422,55 @@ export function FlowBuilderPage() {
     setFlows((prev) => prev.map((f) => f.id === flowId ? { ...f, activo: !f.activo } : f));
   }
 
-  function handleNewFlow() {
-    const f: Flow = {
-      id: `flow-${Date.now()}`,
+  function createBlankFlow(idSuffix: string): Flow {
+    return {
+      id: `flow-${idSuffix}`,
       nombre: 'Nuevo flujo',
-      descripcion: 'Descripción del flujo',
+      descripcion: 'Descripcion del flujo',
       activo: false,
-      canal: 'whatsapp',
+      canales: ['whatsapp'],
       nodes: [
-        { id: 'n-start', tipo: 'start', label: 'Inicio', x: 210, y: 30 },
-        { id: 'n-end', tipo: 'end', label: 'Fin', x: 210, y: 160 },
+        { id: `n-start-${idSuffix}`, tipo: 'start', label: 'Inicio', x: 210, y: 30 },
+        { id: `n-end-${idSuffix}`, tipo: 'end', label: 'Fin', x: 210, y: 160 },
       ],
-      edges: [{ id: 'e-1', source: 'n-start', target: 'n-end' }],
+      edges: [{ id: `e-${idSuffix}`, source: `n-start-${idSuffix}`, target: `n-end-${idSuffix}` }],
       createdAt: new Date().toISOString(),
     };
+  }
+
+  function handleNewFlow() {
+    const f: Flow = createBlankFlow(String(Date.now()));
     setFlows((prev) => [...prev, f]);
     setActiveFlowId(f.id);
     showSuccess('Nuevo flujo creado');
+  }
+
+  function handleCreateFromTemplate(template: QuickFlowTemplate) {
+    const baseId = Date.now();
+    const flow: Flow = {
+      id: `flow-${baseId}`,
+      nombre: template.nombre,
+      descripcion: template.descripcion,
+      activo: true,
+      canales: template.canales,
+      nodes: [
+        { id: `n-start-${baseId}`, tipo: 'start', label: 'Inicio', x: 210, y: 30 },
+        { id: `n-msg-${baseId}`, tipo: 'message', label: 'Bienvenida', contenido: template.greeting, x: 210, y: 150 },
+        { id: `n-menu-${baseId}`, tipo: 'quickReply', label: 'Menu rapido', opciones: ['Subsidio', 'Certificado', 'Hablar con asesor'], x: 210, y: 270 },
+        { id: `n-end-${baseId}`, tipo: 'end', label: 'Fin', x: 210, y: 390 },
+      ],
+      edges: [
+        { id: `e-1-${baseId}`, source: `n-start-${baseId}`, target: `n-msg-${baseId}` },
+        { id: `e-2-${baseId}`, source: `n-msg-${baseId}`, target: `n-menu-${baseId}` },
+        { id: `e-3-${baseId}`, source: `n-menu-${baseId}`, target: `n-end-${baseId}` },
+      ],
+      createdAt: new Date().toISOString(),
+    };
+
+    setFlows((prev) => [flow, ...prev]);
+    setActiveFlowId(flow.id);
+    setSelectedNodeId(null);
+    showSuccess(`Flujo "${template.nombre}" listo para editar`);
   }
 
   function handleUpdateNode(update: Partial<FlowNode>) {
@@ -293,6 +480,97 @@ export function FlowBuilderPage() {
         ? { ...f, nodes: f.nodes.map((n) => n.id === selectedNodeId ? { ...n, ...update } : n) }
         : f
     ));
+  }
+
+  function handleNodePointerDown(e: React.MouseEvent<HTMLDivElement>, nodeId: string) {
+    if (!activeFlow || !canvasPlaneRef.current) return;
+    const node = activeFlow.nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+    const rect = canvasPlaneRef.current.getBoundingClientRect();
+    setSelectedNodeId(nodeId);
+    setDragging({
+      nodeId,
+      offsetX: (e.clientX - rect.left) / zoom - node.x,
+      offsetY: (e.clientY - rect.top) / zoom - node.y,
+    });
+  }
+
+  function handleCanvasMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    if (!activeFlow || !canvasPlaneRef.current) return;
+    const rect = canvasPlaneRef.current.getBoundingClientRect();
+    if (dragging) {
+      const nextX = Math.max(0, Math.min(CANVAS_W - NODE_WIDTH, (e.clientX - rect.left) / zoom - dragging.offsetX));
+      const nextY = Math.max(0, Math.min(maxY - NODE_HEIGHT, (e.clientY - rect.top) / zoom - dragging.offsetY));
+      setFlows((prev) =>
+        prev.map((flow) =>
+          flow.id === activeFlowId
+            ? { ...flow, nodes: flow.nodes.map((node) => (node.id === dragging.nodeId ? { ...node, x: nextX, y: nextY } : node)) }
+            : flow
+        )
+      );
+    }
+    if (linking) {
+      setLinking((prev) =>
+        prev ? { ...prev, x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom } : prev
+      );
+    }
+  }
+
+  function handleCanvasMouseUp() {
+    if (dragging) {
+      setDragging(null);
+    }
+    if (linking) {
+      setLinking(null);
+    }
+  }
+
+  function getDefaultBranchLabel(sourceNode: FlowNode) {
+    if (!activeFlow) return undefined;
+    const existingLabels = activeFlow.edges
+      .filter((edge) => edge.source === sourceNode.id)
+      .map((edge) => edge.label)
+      .filter(Boolean) as string[];
+
+    if (sourceNode.tipo === 'quickReply') {
+      const candidate = (sourceNode.opciones ?? []).find((option) => !existingLabels.includes(option));
+      return candidate;
+    }
+    if (sourceNode.tipo === 'condition') {
+      const defaults = ['Si', 'No', 'Otro'];
+      return defaults.find((option) => !existingLabels.includes(option)) ?? 'Ruta';
+    }
+    return undefined;
+  }
+
+  function handleLinkStart(e: React.MouseEvent<HTMLButtonElement>, sourceId: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!activeFlow || !canvasPlaneRef.current) return;
+    const sourceNode = activeFlow.nodes.find((node) => node.id === sourceId);
+    if (!sourceNode) return;
+    const center = nodeCenter(sourceNode);
+    setLinking({ sourceId, x: center.x, y: center.y });
+  }
+
+  function handleLinkComplete(targetId: string) {
+    if (!linking || linking.sourceId === targetId || !activeFlow) return;
+    const sourceId = linking.sourceId;
+    const duplicate = activeFlow.edges.some((edge) => edge.source === sourceId && edge.target === targetId);
+    if (duplicate) {
+      setLinking(null);
+      showInfo('Estos nodos ya estan conectados');
+      return;
+    }
+    const sourceNode = activeFlow.nodes.find((node) => node.id === sourceId);
+    const label = sourceNode ? getDefaultBranchLabel(sourceNode) : 'Ruta';
+    const edge: FlowEdge = { id: `e-${Date.now()}`, source: sourceId, target: targetId, label };
+    setFlows((prev) =>
+      prev.map((flow) => (flow.id === activeFlowId ? { ...flow, edges: [...flow.edges, edge] } : flow))
+    );
+    setSelectedNodeId(sourceId);
+    setLinking(null);
+    showSuccess('Conexion creada');
   }
 
   function handleExportJSON() {
@@ -305,14 +583,262 @@ export function FlowBuilderPage() {
   }
 
   function handleAddNodeType(tipo: FlowNodeType) {
-    showInfo(`Arrastra el nodo "${tipo}" al canvas`);
+    if (!activeFlow) return;
+    const nodeId = `n-${tipo}-${Date.now()}`;
+    const sourceNode =
+      activeFlow.nodes.find((n) => n.id === selectedNodeId) ??
+      [...activeFlow.nodes].reverse().find((n) => n.tipo !== 'end') ??
+      activeFlow.nodes[activeFlow.nodes.length - 1];
+    const newNode: FlowNode = {
+      id: nodeId,
+      tipo,
+      label:
+        tipo === 'quickReply'
+          ? 'Opciones'
+          : tipo === 'message'
+            ? 'Mensaje'
+            : tipo === 'delay'
+              ? 'Espera'
+              : tipo === 'media'
+                ? 'Media'
+                : tipo === 'tag'
+                  ? 'Tag'
+                  : tipo,
+      x: 210,
+      y: Math.max(40, maxY - 140),
+      delayMs: tipo === 'delay' ? 3000 : undefined,
+      mediaType: tipo === 'media' ? 'image' : undefined,
+      mediaUrl: tipo === 'media' ? 'https://example.com/archivo.jpg' : undefined,
+      tagValue: tipo === 'tag' ? 'lead_caliente' : undefined,
+    };
+    const newEdge: FlowEdge | null = sourceNode
+      ? { id: `e-${Date.now()}`, source: sourceNode.id, target: nodeId }
+      : null;
+    setFlows((prev) =>
+      prev.map((flow) =>
+        flow.id === activeFlowId
+          ? {
+              ...flow,
+              nodes: [...flow.nodes, newNode],
+              edges: newEdge ? [...flow.edges, newEdge] : flow.edges,
+            }
+          : flow
+      )
+    );
+    setSelectedNodeId(nodeId);
+    showSuccess(`Nodo "${tipo}" agregado`);
+  }
+
+  function handleUpdateEdgeLabel(edgeId: string, label: string) {
+    setFlows((prev) =>
+      prev.map((flow) =>
+        flow.id === activeFlowId
+          ? { ...flow, edges: flow.edges.map((edge) => (edge.id === edgeId ? { ...edge, label } : edge)) }
+          : flow
+      )
+    );
+  }
+
+  function handleDeleteEdge(edgeId: string) {
+    setFlows((prev) =>
+      prev.map((flow) =>
+        flow.id === activeFlowId ? { ...flow, edges: flow.edges.filter((edge) => edge.id !== edgeId) } : flow
+      )
+    );
+    showInfo('Conexion eliminada');
+  }
+
+  function getNodeLabel(nodeId: string) {
+    return activeFlow?.nodes.find((node) => node.id === nodeId)?.label ?? nodeId;
+  }
+
+  function toggleFlowChannel(channelId: Flow['canales'][number]) {
+    if (!activeFlow) return;
+    const current = activeFlow.canales ?? [];
+    let next = current.includes(channelId)
+      ? current.filter((c) => c !== channelId)
+      : [...current, channelId];
+    if (next.length === 0) next = ['whatsapp'];
+    setFlows((prev) => prev.map((f) => (f.id === activeFlowId ? { ...f, canales: next as Flow['canales'] } : f)));
+  }
+
+  function applyZoom(nextZoom: number) {
+    setZoom(Math.max(0.5, Math.min(1.8, Number(nextZoom.toFixed(2)))));
+  }
+
+  function handleCanvasWheel(e: React.WheelEvent<HTMLDivElement>) {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.08 : 0.08;
+    applyZoom(zoom + delta);
+  }
+
+  function handleAutoLayout() {
+    if (!activeFlow) return;
+    const nodeMap = new Map(activeFlow.nodes.map((node) => [node.id, node]));
+    const indegree = new Map<string, number>(activeFlow.nodes.map((node) => [node.id, 0]));
+    const outgoing = new Map<string, string[]>();
+
+    activeFlow.edges.forEach((edge) => {
+      if (!nodeMap.has(edge.source) || !nodeMap.has(edge.target)) return;
+      indegree.set(edge.target, (indegree.get(edge.target) ?? 0) + 1);
+      outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge.target]);
+    });
+
+    const roots = activeFlow.nodes
+      .filter((node) => (indegree.get(node.id) ?? 0) === 0)
+      .map((node) => node.id);
+    const queue = roots.length > 0 ? [...roots] : [activeFlow.nodes[0]?.id].filter(Boolean) as string[];
+    const depth = new Map<string, number>();
+
+    queue.forEach((nodeId) => depth.set(nodeId, 0));
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const currentDepth = depth.get(current) ?? 0;
+      (outgoing.get(current) ?? []).forEach((targetId) => {
+        const nextDepth = currentDepth + 1;
+        if (!depth.has(targetId) || nextDepth > (depth.get(targetId) ?? 0)) {
+          depth.set(targetId, nextDepth);
+          queue.push(targetId);
+        }
+      });
+    }
+
+    let fallbackDepth = Math.max(0, ...Array.from(depth.values()));
+    activeFlow.nodes.forEach((node) => {
+      if (!depth.has(node.id)) {
+        fallbackDepth += 1;
+        depth.set(node.id, fallbackDepth);
+      }
+    });
+
+    const levels = new Map<number, FlowNode[]>();
+    activeFlow.nodes.forEach((node) => {
+      const d = depth.get(node.id) ?? 0;
+      levels.set(d, [...(levels.get(d) ?? []), node]);
+    });
+
+    const horizontalGap = 44;
+    const verticalGap = 62;
+    const topPadding = 32;
+    const updatedById = new Map<string, FlowNode>();
+
+    Array.from(levels.entries())
+      .sort((a, b) => a[0] - b[0])
+      .forEach(([level, nodes]) => {
+        const totalWidth = nodes.length * NODE_WIDTH + Math.max(0, nodes.length - 1) * horizontalGap;
+        const startX = Math.max(8, Math.floor((CANVAS_W - totalWidth) / 2));
+        nodes.forEach((node, index) => {
+          updatedById.set(node.id, {
+            ...node,
+            x: startX + index * (NODE_WIDTH + horizontalGap),
+            y: topPadding + level * (NODE_HEIGHT + verticalGap),
+          });
+        });
+      });
+
+    setFlows((prev) =>
+      prev.map((flow) =>
+        flow.id === activeFlowId
+          ? { ...flow, nodes: flow.nodes.map((node) => updatedById.get(node.id) ?? node) }
+          : flow
+      )
+    );
+    showSuccess('Layout ordenado automaticamente');
+  }
+
+  function handleDeleteSelectedNode() {
+    if (!selectedNodeId) return;
+    const nodeId = selectedNodeId;
+    setFlows((prev) =>
+      prev.map((flow) =>
+        flow.id === activeFlowId
+          ? {
+              ...flow,
+              nodes: flow.nodes.filter((node) => node.id !== nodeId),
+              edges: flow.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
+            }
+          : flow
+      )
+    );
+    setSelectedNodeId(null);
+    setShowDeleteNodeConfirm(false);
+    showSuccess('Nodo eliminado');
+  }
+
+  function requestDeleteFlow() {
+    setDeleteFlowAcknowledge(false);
+    setDeleteFlowInput('');
+    setShowDeleteFlowConfirm(true);
+  }
+
+  function handleDeleteFlow() {
+    if (!activeFlow) return;
+    const remaining = flows.filter((flow) => flow.id !== activeFlow.id);
+    if (remaining.length === 0) {
+      const fresh = createBlankFlow(String(Date.now()));
+      setFlows([fresh]);
+      setActiveFlowId(fresh.id);
+    } else {
+      setFlows(remaining);
+      setActiveFlowId(remaining[0].id);
+    }
+    setSelectedNodeId(null);
+    setShowDeleteFlowConfirm(false);
+    showSuccess('Flujo eliminado');
   }
 
   // Compute canvas height based on max node y
   const maxY = activeFlow ? Math.max(...activeFlow.nodes.map((n) => n.y + NODE_HEIGHT + 40), 400) : 400;
+  const hasTemplateStructure = Boolean(activeFlow && activeFlow.nodes.length >= 4);
+  const hasWelcomeMessage = Boolean(
+    activeFlow?.nodes.some((node) => node.tipo === 'message' && Boolean(node.contenido && node.contenido.trim().length > 8))
+  );
+  const isReadyToRun = Boolean(activeFlow?.activo && activeFlow?.nodes.length >= 3);
+  const guideSteps = [
+    { label: '1. Elige plantilla o crea flujo base', done: hasTemplateStructure },
+    { label: '2. Ajusta bienvenida y menu rapido', done: hasWelcomeMessage },
+    { label: '3. Activa y prueba con Simular', done: isReadyToRun },
+  ];
+  const completedGuideSteps = guideSteps.filter((step) => step.done).length;
 
   return (
-    <div className="flex h-[calc(100vh-120px)] gap-0 overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-brand-100 bg-brand-50/60 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Modo guiado</p>
+            <h3 className="text-sm font-semibold text-slate-900">Configura tu bot en 3 pasos</h3>
+          </div>
+          <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-brand-700">
+            {completedGuideSteps}/3 completados
+          </span>
+        </div>
+        <div className="mt-3 grid gap-2 md:grid-cols-3">
+          {guideSteps.map((step) => (
+            <div key={step.label} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+              {step.done ? <CheckCircle2 size={15} className="text-emerald-600" /> : <Circle size={15} className="text-slate-300" />}
+              <p className="text-xs text-slate-700">{step.label}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            onClick={() => handleCreateFromTemplate(QUICK_FLOW_TEMPLATES[0])}
+            className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700"
+          >
+            Crear flujo sugerido
+          </button>
+          <button
+            onClick={() => setShowSimulation(true)}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+          >
+            Probar simulacion
+          </button>
+        </div>
+      </div>
+
+      <div className="flex h-[calc(100vh-120px)] gap-0 overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
       {/* LEFT SIDEBAR — Flow list */}
       <div className="flex w-64 flex-shrink-0 flex-col border-r border-slate-200 bg-white">
         <div className="border-b border-slate-100 p-4">
@@ -324,6 +850,24 @@ export function FlowBuilderPage() {
             >
               <Plus size={12} /> Nuevo
             </button>
+          </div>
+          <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-3">
+            <p className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-brand-700">
+              <Sparkles size={12} />
+              Arranque rapido
+            </p>
+            <div className="space-y-1.5">
+              {QUICK_FLOW_TEMPLATES.map((template) => (
+                <button
+                  key={template.id}
+                  onClick={() => handleCreateFromTemplate(template)}
+                  className="w-full rounded-lg border border-brand-100 bg-white px-2.5 py-2 text-left transition hover:border-brand-300 hover:bg-brand-50"
+                >
+                  <p className="text-xs font-semibold text-slate-900">{template.nombre}</p>
+                  <p className="text-[10px] text-slate-500">{template.descripcion}</p>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
@@ -344,9 +888,21 @@ export function FlowBuilderPage() {
               </div>
               <p className="mt-0.5 truncate text-xs text-slate-500">{f.descripcion}</p>
               <div className="mt-1 flex items-center gap-2">
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${f.canal === 'whatsapp' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
-                  {f.canal}
-                </span>
+                <div className="flex flex-wrap gap-1">
+                  {f.canales.slice(0, 2).map((channelId) => {
+                    const channel = CHANNEL_OPTIONS.find((opt) => opt.id === channelId);
+                    return (
+                      <span key={channelId} className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${channel?.className ?? 'bg-slate-100 text-slate-600'}`}>
+                        {channel?.label ?? channelId}
+                      </span>
+                    );
+                  })}
+                  {f.canales.length > 2 && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                      +{f.canales.length - 2}
+                    </span>
+                  )}
+                </div>
                 <span className="text-[10px] text-slate-400">{f.nodes.length} nodos</span>
               </div>
             </button>
@@ -377,6 +933,31 @@ export function FlowBuilderPage() {
                 {activeFlow.activo ? 'Activo' : 'Inactivo'}
               </button>
             </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Canales disponibles</label>
+              <div className="flex flex-wrap gap-1.5">
+                {CHANNEL_OPTIONS.map((channel) => {
+                  const selected = activeFlow.canales.includes(channel.id);
+                  return (
+                    <button
+                      key={channel.id}
+                      onClick={() => toggleFlowChannel(channel.id)}
+                      className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition ${
+                        selected ? channel.className : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                      }`}
+                    >
+                      {channel.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <button
+              onClick={requestDeleteFlow}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-200"
+            >
+              <Trash2 size={12} /> Eliminar flujo
+            </button>
           </div>
         )}
       </div>
@@ -384,41 +965,100 @@ export function FlowBuilderPage() {
       {/* CENTER — Canvas */}
       <div className="relative flex flex-1 flex-col overflow-hidden bg-slate-50">
         {/* Canvas toolbar */}
-        <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
-          <p className="text-xs font-semibold text-slate-500">Agregar nodo:</p>
-          {NODE_TYPES_LIST.map((tipo) => {
-            const cfg = NODE_CONFIG[tipo];
-            return (
-              <button
-                key={tipo}
-                onClick={() => handleAddNodeType(tipo)}
-                title={tipo}
-                className={`flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${cfg.bg} ${cfg.border} ${cfg.color} hover:opacity-80`}
-              >
-                {cfg.icon} {tipo}
-              </button>
-            );
-          })}
-          <div className="ml-auto flex gap-2">
-            <button
-              onClick={() => setShowSimulation(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-200 transition"
-            >
-              <Play size={12} /> Simular
-            </button>
-            <button
-              onClick={handleExportJSON}
-              className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition"
-            >
-              Export JSON
-            </button>
+        <div className="border-b border-slate-200 bg-white px-4 py-3">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
+            <div>
+              <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Nodos</p>
+              <div className="flex flex-wrap gap-1.5">
+                {NODE_TYPES_LIST.map((tipo) => {
+                  const cfg = NODE_CONFIG[tipo];
+                  return (
+                    <button
+                      key={tipo}
+                      onClick={() => handleAddNodeType(tipo)}
+                      title={tipo}
+                      className={`flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${cfg.bg} ${cfg.border} ${cfg.color} hover:opacity-80`}
+                    >
+                      {cfg.icon} {tipo}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5">
+              <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Vista</p>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => applyZoom(zoom - 0.1)}
+                  className="rounded-lg bg-white px-2 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-100"
+                  title="Zoom out"
+                >
+                  <Minus size={12} />
+                </button>
+                <button
+                  onClick={() => applyZoom(1)}
+                  className="rounded-lg bg-white px-2 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-100"
+                  title="Reset zoom"
+                >
+                  <RotateCcw size={12} />
+                </button>
+                <button
+                  onClick={() => applyZoom(zoom + 0.1)}
+                  className="rounded-lg bg-white px-2 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-100"
+                  title="Zoom in"
+                >
+                  <Plus size={12} />
+                </button>
+                <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-slate-600 shadow-sm">
+                  {Math.round(zoom * 100)}%
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5">
+              <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Acciones</p>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={handleAutoLayout}
+                  className="flex items-center gap-1 rounded-lg bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-200"
+                >
+                  <Sparkles size={12} /> Layout
+                </button>
+                <button
+                  onClick={() => setShowSimulation(true)}
+                  className="flex items-center gap-1 rounded-lg bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-200"
+                >
+                  <Play size={12} /> Simular
+                </button>
+                <button
+                  onClick={handleExportJSON}
+                  className="rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-100"
+                >
+                  Export
+                </button>
+              </div>
+            </div>
           </div>
+          <p className="mt-2 text-[11px] text-slate-400">Tip: usa Ctrl + rueda para zoom con mouse.</p>
         </div>
 
         {/* Scrollable canvas */}
-        <div className="flex-1 overflow-auto p-6" ref={canvasRef}>
+        <div
+          className="flex-1 overflow-auto p-6"
+          ref={canvasRef}
+          onMouseMove={handleCanvasMouseMove}
+          onMouseUp={handleCanvasMouseUp}
+          onMouseLeave={handleCanvasMouseUp}
+          onWheel={handleCanvasWheel}
+        >
           {activeFlow && (
-            <div className="relative mx-auto" style={{ width: CANVAS_W, height: maxY }}>
+            <div className="relative mx-auto" style={{ width: CANVAS_W * zoom, height: maxY * zoom }}>
+              <div
+                ref={canvasPlaneRef}
+                className="relative origin-top-left"
+                style={{ width: CANVAS_W, height: maxY, transform: `scale(${zoom})` }}
+              >
               {/* SVG edges */}
               <svg
                 style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}
@@ -455,6 +1095,24 @@ export function FlowBuilderPage() {
                     </g>
                   );
                 })}
+                {linking && (() => {
+                  const src = activeFlow.nodes.find((node) => node.id === linking.sourceId);
+                  if (!src) return null;
+                  const s = nodeCenter(src);
+                  const t = { x: linking.x, y: linking.y };
+                  const midY = (s.y + t.y) / 2;
+                  const path = `M${s.x},${s.y} C${s.x},${midY} ${t.x},${midY} ${t.x},${t.y}`;
+                  return (
+                    <path
+                      d={path}
+                      fill="none"
+                      stroke="#2563eb"
+                      strokeWidth={2}
+                      strokeDasharray="6 4"
+                      opacity={0.85}
+                    />
+                  );
+                })()}
               </svg>
 
               {/* Nodes */}
@@ -463,9 +1121,13 @@ export function FlowBuilderPage() {
                   key={node.id}
                   node={node}
                   isSelected={selectedNodeId === node.id}
-                  onClick={() => setSelectedNodeId(node.id === selectedNodeId ? null : node.id)}
+                  onClick={() => setSelectedNodeId(node.id)}
+                  onPointerDown={(e) => handleNodePointerDown(e, node.id)}
+                  onLinkStart={(e) => handleLinkStart(e, node.id)}
+                  onLinkComplete={() => handleLinkComplete(node.id)}
                 />
               ))}
+              </div>
             </div>
           )}
         </div>
@@ -589,11 +1251,100 @@ export function FlowBuilderPage() {
                 </div>
               )}
 
+              {selectedNode.tipo === 'delay' && (
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Espera (ms)</label>
+                  <input
+                    type="number"
+                    value={selectedNode.delayMs ?? 3000}
+                    onChange={(e) => handleUpdateNode({ delayMs: Number(e.target.value) })}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+                  />
+                </div>
+              )}
+
+              {selectedNode.tipo === 'media' && (
+                <>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Tipo de media</label>
+                    <select
+                      value={selectedNode.mediaType ?? 'image'}
+                      onChange={(e) => handleUpdateNode({ mediaType: e.target.value as 'image' | 'pdf' | 'video' })}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+                    >
+                      <option value="image">image</option>
+                      <option value="pdf">pdf</option>
+                      <option value="video">video</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">URL</label>
+                    <input
+                      type="text"
+                      value={selectedNode.mediaUrl ?? ''}
+                      onChange={(e) => handleUpdateNode({ mediaUrl: e.target.value })}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+                    />
+                  </div>
+                </>
+              )}
+
+              {selectedNode.tipo === 'tag' && (
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Nombre de tag</label>
+                  <input
+                    type="text"
+                    value={selectedNode.tagValue ?? ''}
+                    onChange={(e) => handleUpdateNode({ tagValue: e.target.value })}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+                  />
+                </div>
+              )}
+
+              {selectedNode.tipo !== 'end' && (
+                <div>
+                  <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Conexiones salientes</label>
+                  <div className="space-y-2">
+                    {activeFlow?.edges.filter((edge) => edge.source === selectedNode.id).map((edge) => (
+                      <div key={edge.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                        <p className="mb-1 text-[10px] font-semibold text-slate-500">Destino: {getNodeLabel(edge.target)}</p>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={edge.label ?? ''}
+                            onChange={(e) => handleUpdateEdgeLabel(edge.id, e.target.value)}
+                            placeholder="Etiqueta de conexion"
+                            className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-brand-400"
+                          />
+                          <button
+                            onClick={() => handleDeleteEdge(edge.id)}
+                            className="rounded-md bg-red-100 px-2 py-1 text-[10px] font-semibold text-red-700 hover:bg-red-200"
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {activeFlow?.edges.filter((edge) => edge.source === selectedNode.id).length === 0 && (
+                      <p className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500">
+                        Crea una conexion arrastrando el punto lateral del nodo.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={() => showSuccess('Nodo guardado')}
                 className="w-full rounded-xl bg-brand-600 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 transition"
               >
                 Guardar nodo
+              </button>
+              <button
+                onClick={() => setShowDeleteNodeConfirm(true)}
+                className="w-full rounded-xl bg-red-100 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-200 transition"
+              >
+                Eliminar nodo
               </button>
             </div>
           </motion.div>
@@ -606,6 +1357,111 @@ export function FlowBuilderPage() {
           <SimulationModal flow={activeFlow} onClose={() => setShowSimulation(false)} />
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {showDeleteNodeConfirm && selectedNode && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
+            >
+              <div className="mb-2 flex items-center gap-2">
+                <AlertTriangle size={16} className="text-red-600" />
+                <p className="text-sm font-bold text-slate-900">Eliminar nodo</p>
+              </div>
+              <p className="text-sm text-slate-600">
+                Se eliminara el nodo <span className="font-semibold text-slate-900">{selectedNode.label}</span> y sus conexiones.
+              </p>
+              <div className="mt-4 flex gap-2">
+                <button
+                  onClick={() => setShowDeleteNodeConfirm(false)}
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleDeleteSelectedNode}
+                  className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showDeleteFlowConfirm && activeFlow && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl"
+            >
+              <div className="mb-2 flex items-center gap-2">
+                <AlertTriangle size={16} className="text-red-600" />
+                <p className="text-sm font-bold text-slate-900">Eliminar flujo (doble verificacion)</p>
+              </div>
+              <p className="text-sm text-slate-600">
+                Esta accion elimina el flujo <span className="font-semibold text-slate-900">{activeFlow.nombre}</span> y no se puede deshacer.
+              </p>
+
+              <label className="mt-4 flex items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={deleteFlowAcknowledge}
+                  onChange={(e) => setDeleteFlowAcknowledge(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>Entiendo que esta eliminacion es permanente.</span>
+              </label>
+
+              <div className="mt-3">
+                <label className="mb-1 block text-xs font-semibold text-slate-500">Escribe el nombre del flujo para confirmar</label>
+                <input
+                  type="text"
+                  value={deleteFlowInput}
+                  onChange={(e) => setDeleteFlowInput(e.target.value)}
+                  placeholder={activeFlow.nombre}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-red-400"
+                />
+              </div>
+
+              <div className="mt-4 flex gap-2">
+                <button
+                  onClick={() => setShowDeleteFlowConfirm(false)}
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleDeleteFlow}
+                  disabled={!deleteFlowAcknowledge || deleteFlowInput !== activeFlow.nombre}
+                  className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40"
+                >
+                  Eliminar flujo
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      </div>
     </div>
   );
 }
+

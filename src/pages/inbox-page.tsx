@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import {
   Search,
   FileText,
@@ -12,17 +14,39 @@ import {
   Send,
   RefreshCw,
   Clock,
+  ToggleLeft,
+  ToggleRight,
+  Phone,
+  Instagram,
+  Globe,
+  MessageSquare,
 } from 'lucide-react';
 import { mockConversations, mockQAScores, mockCopilotSuggestions } from '../data/mock';
-import { ChannelBadge, StatusBadge, SentimentBadge, Skeleton } from '../components/ui/primitives';
+import { StatusBadge, SentimentBadge, Skeleton } from '../components/ui/primitives';
 import type { Channel, Status, Conversation, TimelineEvent, Message } from '../types';
 import { api } from '../services/api';
 import type { ConvListItem, ConvDetail } from '../services/api';
 import { useNotification } from '../contexts/NotificationContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 
+const CHANNEL_META: Record<string, { bg: string; color: string; border: string; label: string }> = {
+  whatsapp: { bg: '#DCFCE7', color: '#16A34A', border: '#16A34A', label: 'WhatsApp' },
+  instagram: { bg: 'linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045)', color: '#fff', border: '#FD1D1D', label: 'Instagram' },
+  web: { bg: '#E0F2FE', color: '#0284C7', border: '#0284C7', label: 'Web Chat' },
+  tiktok: { bg: '#000', color: '#FE2C55', border: '#FE2C55', label: 'TikTok' },
+  todos: { bg: '#F1F5F9', color: '#64748B', border: '#64748B', label: 'Todos' },
+};
+
+const CHANNEL_ICON: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  whatsapp: Phone,
+  instagram: Instagram,
+  web: Globe,
+  tiktok: MessageSquare,
+};
+
 type ChannelFilter = 'todos' | Channel;
 type StatusFilter = 'todos' | Status;
+type MobileView = 'conversaciones' | 'chat' | 'ficha';
 
 function formatTime(ts: string) {
   return new Date(ts).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
@@ -95,9 +119,9 @@ function TimelineIcon({ tipo }: { tipo: TimelineEvent['tipo'] }) {
 
 const CHANNEL_TABS: { key: ChannelFilter; label: string }[] = [
   { key: 'todos', label: 'Todos' },
-  { key: 'web', label: 'Web' },
   { key: 'whatsapp', label: 'WhatsApp' },
   { key: 'instagram', label: 'Instagram' },
+  { key: 'web', label: 'Web' },
   { key: 'tiktok', label: 'TikTok' },
 ];
 
@@ -163,15 +187,31 @@ function ConversationListItem({
   isActive: boolean;
   onClick: () => void;
 }) {
+  const meta = CHANNEL_META[conv.channel] ?? CHANNEL_META['web'];
+  const ChannelIcon = CHANNEL_ICON[conv.channel] ?? MessageSquare;
   return (
     <button
       onClick={onClick}
-      className={`flex w-full gap-3 border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50 ${
-        isActive ? 'border-l-2 border-l-brand-400 bg-brand-50' : ''
+      className={`relative flex w-full gap-3 border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50 ${
+        isActive ? 'bg-brand-50' : ''
       }`}
     >
-      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700">
-        {getInitials(conv.user.nombre, conv.user.apellido)}
+      {/* Channel color bar */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-0.5 rounded-r"
+        style={{ background: meta.border }}
+      />
+      {/* Avatar with channel badge */}
+      <div className="relative flex-shrink-0">
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700">
+          {getInitials(conv.user.nombre, conv.user.apellido)}
+        </div>
+        <div
+          className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full"
+          style={{ background: meta.bg, color: meta.color }}
+        >
+          <ChannelIcon size={9} />
+        </div>
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between">
@@ -184,7 +224,6 @@ function ConversationListItem({
           </div>
         </div>
         <div className="mt-0.5 flex items-center gap-1.5">
-          <ChannelBadge channel={conv.channel} />
           <span className="truncate text-xs text-slate-500">{conv.intent}</span>
         </div>
         <p className="mt-0.5 truncate text-xs text-slate-400">{conv.lastMessage}</p>
@@ -200,9 +239,11 @@ function ConversationListItem({
 function CopilotPanel({
   intent,
   onInsert,
+  disabled = false,
 }: {
   intent: string;
   onInsert: (text: string) => void;
+  disabled?: boolean;
 }) {
   const { showSuccess } = useNotification();
   const [loading, setLoading] = useState(false);
@@ -233,7 +274,7 @@ function CopilotPanel({
         </div>
         <button
           onClick={handleRegenerate}
-          disabled={loading}
+          disabled={loading || disabled}
           className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold text-slate-500 hover:bg-slate-100 transition disabled:opacity-50"
         >
           <RefreshCw size={10} className={loading ? 'animate-spin' : ''} /> Regenerar
@@ -245,15 +286,22 @@ function CopilotPanel({
           <button
             key={i}
             onClick={() => {
+              if (disabled) return;
               onInsert(sug);
               showSuccess('Sugerencia insertada');
             }}
-            className="w-full rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 text-left text-xs text-slate-700 transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-800"
+            disabled={disabled}
+            className="w-full rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 text-left text-xs text-slate-700 transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-800 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <p className="line-clamp-2 leading-snug">{sug}</p>
           </button>
         ))}
       </div>
+      {disabled && (
+        <p className="mt-2 text-[10px] font-semibold text-amber-600">
+          Copiloto deshabilitado porque el Agente de Ventas esta desactivado.
+        </p>
+      )}
     </div>
   );
 }
@@ -274,6 +322,9 @@ export function InboxPage() {
   const [replyVal, setReplyVal] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
   const [showTyping, setShowTyping] = useState(false);
+  const [mobileView, setMobileView] = useState<MobileView>('conversaciones');
+  const [salesAgentAutomatic, setSalesAgentAutomatic] = useState(true);
+  const autoReplyTracker = useRef<Set<string>>(new Set());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -327,6 +378,45 @@ export function InboxPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeId, conversations]);
 
+  // Automatic sales agent: responds to the latest user message
+  useEffect(() => {
+    if (!salesAgentAutomatic) return;
+    const conv = conversations.find((c) => c.id === activeId);
+    if (!conv || conv.messages.length === 0) return;
+
+    const lastMsg = conv.messages[conv.messages.length - 1];
+    if (lastMsg.role !== 'user') return;
+
+    const key = `${conv.id}:${lastMsg.id}`;
+    if (autoReplyTracker.current.has(key)) return;
+    autoReplyTracker.current.add(key);
+
+    setShowTyping(true);
+    const timer = setTimeout(() => {
+      const suggestions = mockCopilotSuggestions[conv.intent] ?? mockCopilotSuggestions['default'] ?? [];
+      const autoText =
+        suggestions[0] ??
+        'Gracias por tu mensaje. Soy el Agente de Ventas y ya estoy gestionando tu solicitud automaticamente.';
+
+      const botMsg: Message = {
+        id: `auto-${Date.now()}`,
+        role: 'bot',
+        content: autoText,
+        timestamp: new Date().toISOString(),
+      };
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conv.id ? { ...c, messages: [...c.messages, botMsg], lastMessage: autoText } : c
+        )
+      );
+      setShowTyping(false);
+      showInfo('Agente de Ventas (auto)', 'Respuesta automatica enviada');
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [activeId, conversations, salesAgentAutomatic, showInfo]);
+
   // WebSocket event handling
   useEffect(() => {
     if (!lastMessage) return;
@@ -360,9 +450,15 @@ export function InboxPage() {
     conversations.find((c) => c.id === activeId) ?? conversations[0] ?? mockConversations[0];
 
   const qaScore = mockQAScores[active.id];
+  const pendientes = conversations.filter((c) => c.status === 'nuevo' || c.status === 'en_proceso').length;
+  const escaladas = conversations.filter((c) => c.status === 'escalado').length;
 
   // Send message handler
   const handleSend = useCallback(async () => {
+    if (salesAgentAutomatic) {
+      showInfo('Modo automatico activo', 'El Agente de Ventas esta atendiendo la conversacion automaticamente.');
+      return;
+    }
     if (!replyVal.trim()) return;
     const content = replyVal.trim();
     setReplyVal('');
@@ -401,7 +497,7 @@ export function InboxPage() {
     } finally {
       setSendingMsg(false);
     }
-  }, [activeId, replyVal, showSuccess, showError]);
+  }, [activeId, replyVal, salesAgentAutomatic, showSuccess, showError, showInfo]);
 
   // Enter key sends message
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -514,6 +610,10 @@ export function InboxPage() {
 
   // IA response handler — improved: uses copilot suggestions
   const handleIA = useCallback(() => {
+    if (salesAgentAutomatic) {
+      showInfo('Modo automatico activo', 'La IA de ventas ya esta respondiendo automaticamente.');
+      return;
+    }
     setShowTyping(true);
     setTimeout(() => {
       setShowTyping(false);
@@ -534,30 +634,103 @@ export function InboxPage() {
       );
       showSuccess('Respuesta IA generada');
     }, 1500);
-  }, [active.intent, activeId, showSuccess]);
+  }, [active.intent, activeId, salesAgentAutomatic, showSuccess, showInfo]);
 
   return (
-    <div className="space-y-3">
-      {/* Filter bar */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-1">
-            {CHANNEL_TABS.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setChannelFilter(t.key)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  channelFilter === t.key
-                    ? 'bg-brand-600 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
+    <div className="space-y-4 px-3 pb-4 pt-4 sm:px-4 sm:pt-5 lg:px-6">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Operacion Omnicanal</p>
+        <div className="mt-1 flex items-center justify-between gap-3">
+          <h1 className="text-xl font-bold text-slate-900">Inbox Unificado</h1>
+          <div className="hidden items-center gap-2 sm:flex">
+            <button
+              onClick={() => setSalesAgentAutomatic((v) => !v)}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                salesAgentAutomatic
+                  ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+              title="Cambiar modo del Agente de Ventas"
+            >
+              {salesAgentAutomatic ? <ToggleRight size={13} /> : <ToggleLeft size={13} />}
+              Agente de Ventas: {salesAgentAutomatic ? 'Automatico' : 'Manual'}
+            </button>
+            <span className="rounded-lg bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
+              Pendientes: {pendientes}
+            </span>
+            <span className="rounded-lg bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-700">
+              Escaladas: {escaladas}
+            </span>
           </div>
-          <div className="h-4 w-px bg-slate-200" />
-          <div className="flex gap-1">
+        </div>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+            {[
+              { label: 'Hub', to: '/omnichannel' },
+              { label: 'Demo Web', to: '/demo-web' },
+              { label: 'WhatsApp', to: '/whatsapp' },
+              { label: 'Instagram', to: '/instagram' },
+              { label: 'TikTok', to: '/tiktok' },
+              { label: 'App Chat', to: '/app-chat' },
+              { label: 'Analytics', to: '/analytics' },
+            ].map((item) => (
+            <Link
+              key={item.to}
+              to={item.to}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-100"
+            >
+              {item.label}
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm lg:hidden">
+        {[
+          { key: 'conversaciones', label: 'Conversaciones' },
+          { key: 'chat', label: 'Chat' },
+          { key: 'ficha', label: 'Ficha' },
+        ].map((item) => (
+          <button
+            key={item.key}
+            onClick={() => setMobileView(item.key as MobileView)}
+            className={`rounded-lg px-2 py-2 text-xs font-semibold transition ${
+              mobileView === item.key ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Filter bar */}
+      <div className="sticky top-0 z-10 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="scrollbar-hide -mx-1 flex gap-1 overflow-x-auto px-1">
+            {CHANNEL_TABS.map((t) => {
+              const meta = CHANNEL_META[t.key] ?? CHANNEL_META['todos'];
+              const isActive = channelFilter === t.key;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setChannelFilter(t.key)}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    isActive
+                      ? 'bg-brand-600 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {t.key !== 'todos' && (
+                    <span
+                      className="inline-block h-2 w-2 rounded-full flex-shrink-0"
+                      style={{ background: meta.border }}
+                    />
+                  )}
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="scrollbar-hide -mx-1 flex gap-1 overflow-x-auto px-1">
             {STATUS_TABS.map((t) => (
               <button
                 key={t.key}
@@ -572,7 +745,18 @@ export function InboxPage() {
               </button>
             ))}
           </div>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="flex items-center gap-3 lg:ml-auto">
+            <button
+              onClick={() => setSalesAgentAutomatic((v) => !v)}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-semibold transition ${
+                salesAgentAutomatic
+                  ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              } sm:hidden`}
+            >
+              {salesAgentAutomatic ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
+              {salesAgentAutomatic ? 'Auto ON' : 'Manual ON'}
+            </button>
             {/* WS connection indicator */}
             <div
               className="flex items-center gap-1.5"
@@ -585,14 +769,14 @@ export function InboxPage() {
                 {connected ? 'En vivo' : 'Offline'}
               </span>
             </div>
-            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 lg:w-auto lg:flex-none">
               <Search size={13} className="text-slate-400" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar..."
-                className="w-32 bg-transparent text-xs text-slate-700 outline-none placeholder-slate-400"
+                className="w-full bg-transparent text-xs text-slate-700 outline-none placeholder-slate-400 lg:w-40"
               />
             </div>
           </div>
@@ -600,9 +784,13 @@ export function InboxPage() {
       </div>
 
       {/* 3-column layout */}
-      <div className="grid h-[580px] grid-cols-[280px_1fr_300px] gap-0 overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+      <div className="grid grid-cols-1 gap-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:h-[calc(100vh-220px)] lg:grid-cols-[280px_minmax(0,1fr)_320px]">
         {/* LEFT: Conversation list */}
-        <div className="flex flex-col border-r border-slate-200 bg-white">
+        <div
+          className={`${
+            mobileView === 'conversaciones' ? 'flex' : 'hidden'
+          } flex-col border-b border-slate-200 bg-white lg:flex lg:border-b-0 lg:border-r`}
+        >
           <div className="border-b border-slate-100 px-4 py-2.5">
             <p className="text-xs font-semibold text-slate-500">
               {listLoading ? '...' : `${filtered.length} conversaciones`}
@@ -630,7 +818,10 @@ export function InboxPage() {
                   key={conv.id}
                   conv={conv}
                   isActive={conv.id === activeId}
-                  onClick={() => setActiveId(conv.id)}
+                  onClick={() => {
+                    setActiveId(conv.id);
+                    setMobileView('chat');
+                  }}
                 />
               ))
             )}
@@ -638,33 +829,61 @@ export function InboxPage() {
         </div>
 
         {/* MIDDLE: Active conversation */}
-        <div className="flex flex-col bg-slate-50">
+        <div className={`${mobileView === 'chat' ? 'flex' : 'hidden'} min-h-[60vh] flex-col bg-slate-50 lg:flex lg:min-h-0`}>
           {/* Header */}
-          <div className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700">
-              {getInitials(active.user.nombre, active.user.apellido)}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="truncate font-bold text-slate-900">
-                {active.user.nombre} {active.user.apellido}
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <ChannelBadge channel={active.channel} />
-                <StatusBadge status={active.status} />
-                {active.assignedAgent && (
-                  <span className="text-xs text-slate-500">· {active.assignedAgent}</span>
-                )}
-                {/* QA Score badge — only for resolved conversations */}
-                {active.status === 'resuelto' && qaScore !== undefined && (
-                  <QAScoreBadge score={qaScore} />
-                )}
+          {(() => {
+            const meta = CHANNEL_META[active.channel] ?? CHANNEL_META['web'];
+            const ChannelIcon = CHANNEL_ICON[active.channel] ?? MessageSquare;
+            return (
+              <div className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                <div className="relative flex-shrink-0">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700">
+                    {getInitials(active.user.nombre, active.user.apellido)}
+                  </div>
+                  <div
+                    className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white"
+                    style={{ background: meta.bg, color: meta.color }}
+                  >
+                    <ChannelIcon size={10} />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="truncate font-bold text-slate-900">
+                    {active.user.nombre} {active.user.apellido}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                      style={{ background: meta.bg, color: meta.color }}
+                    >
+                      <ChannelIcon size={9} />
+                      {meta.label}
+                    </span>
+                    <StatusBadge status={active.status} />
+                    {active.assignedAgent && (
+                      <span className="text-xs text-slate-500">· {active.assignedAgent}</span>
+                    )}
+                    {active.status === 'resuelto' && qaScore !== undefined && (
+                      <QAScoreBadge score={qaScore} />
+                    )}
+                  </div>
+                </div>
+                <p className="flex-shrink-0 text-xs text-slate-400">{formatDate(active.createdAt)}</p>
               </div>
-            </div>
-            <p className="flex-shrink-0 text-xs text-slate-400">{formatDate(active.createdAt)}</p>
-          </div>
+            );
+          })()}
 
           {/* Messages */}
-          <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto p-4">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeId}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.18 }}
+                className="space-y-3"
+              >
             {detailLoading ? (
               <div className="space-y-3">
                 {Array.from({ length: 3 }).map((_, i) => (
@@ -746,6 +965,8 @@ export function InboxPage() {
               </div>
             )}
             <div ref={messagesEndRef} />
+              </motion.div>
+            </AnimatePresence>
           </div>
 
           {/* Action bar */}
@@ -756,25 +977,30 @@ export function InboxPage() {
                 value={replyVal}
                 onChange={(e) => setReplyVal(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Escribe una respuesta..."
+                placeholder={salesAgentAutomatic ? 'Modo automatico activo: el agente responde solo' : 'Escribe una respuesta manual...'}
                 className="flex-1 bg-transparent text-sm text-slate-800 placeholder-slate-400 outline-none"
-                disabled={sendingMsg}
+                disabled={sendingMsg || salesAgentAutomatic}
               />
               <button
                 className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition disabled:opacity-40"
-                disabled={!replyVal.trim() || sendingMsg}
+                disabled={!replyVal.trim() || sendingMsg || salesAgentAutomatic}
                 onClick={() => void handleSend()}
               >
                 <Send size={13} />
               </button>
             </div>
-            <div className="mt-2 flex gap-1.5">
+            {salesAgentAutomatic && (
+              <p className="mt-1 text-[11px] font-semibold text-emerald-700">
+                El Agente de Ventas esta en modo automatico y gestiona toda la conversacion.
+              </p>
+            )}
+            <div className="mt-2 flex flex-wrap gap-1.5">
               <button className="flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition">
                 <FileText size={11} /> Plantilla
               </button>
               <button
                 onClick={handleIA}
-                disabled={showTyping}
+                disabled={showTyping || salesAgentAutomatic}
                 className="flex items-center gap-1 rounded-lg bg-violet-100 px-2.5 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-200 transition disabled:opacity-50"
               >
                 <Sparkles size={11} /> IA
@@ -799,7 +1025,11 @@ export function InboxPage() {
         </div>
 
         {/* RIGHT: User profile + timeline + AI Copilot */}
-        <div className="flex flex-col gap-0 overflow-y-auto border-l border-slate-200 bg-white">
+        <div
+          className={`${
+            mobileView === 'ficha' ? 'flex' : 'hidden'
+          } flex-col gap-0 overflow-y-auto border-t border-slate-200 bg-white lg:flex lg:border-l lg:border-t-0`}
+        >
           {/* User profile */}
           <div className="border-b border-slate-100 p-4">
             <div className="mb-3 flex items-center gap-3">
@@ -867,6 +1097,7 @@ export function InboxPage() {
           <CopilotPanel
             intent={active.intent}
             onInsert={(text) => setReplyVal(text)}
+            disabled={salesAgentAutomatic}
           />
         </div>
       </div>

@@ -78,3 +78,57 @@ export interface NavItem {
   audience: AudienceType;
   icon?: string;
 }
+
+export type StockStatus = 'in_stock' | 'low_stock' | 'out_of_stock';
+export type ProductStatus = 'active' | 'draft' | 'archived';
+export type OrderStatus =
+  | 'new'
+  | 'paid'
+  | 'processing'
+  | 'shipped'
+  | 'delivered'
+  | 'cancelled';
+
+export interface ProductVariant {
+  id: string;
+  sku: string;
+  name: string;
+  price: number;
+  cost: number;
+  stock: number;
+  reserved: number;
+}
+
+export interface Product {
+  id: string;
+  title: string;
+  brand: string;
+  category: string;
+  status: ProductStatus;
+  image: string;
+  variants: ProductVariant[];
+  tags: string[];
+  updatedAt: string;
+}
+
+export interface InventoryMovement {
+  id: string;
+  sku: string;
+  type: 'in' | 'out' | 'adjustment' | 'reservation';
+  quantity: number;
+  reason: string;
+  actor: string;
+  createdAt: string;
+}
+
+export interface EcommerceOrder {
+  id: string;
+  customerName: string;
+  channel: 'ecommerce' | 'whatsapp' | 'instagram' | 'web';
+  status: OrderStatus;
+  total: number;
+  currency: 'COP';
+  items: { sku: string; qty: number; unitPrice: number }[];
+  createdAt: string;
+  updatedAt: string;
+}

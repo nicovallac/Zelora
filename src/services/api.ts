@@ -139,6 +139,18 @@ export interface CreateUserPayload {
   tipo_afiliado: string;
 }
 
+export interface CreateOrderPayload {
+  customer_name: string;
+  channel: 'ecommerce' | 'whatsapp' | 'instagram' | 'web';
+  items: { sku: string; qty: number; unit_price: number }[];
+  currency?: 'COP';
+}
+
+export interface ReserveInventoryPayload {
+  order_id: string;
+  items: { sku: string; qty: number }[];
+}
+
 // ─── API object ───────────────────────────────────────────────────────────────
 
 export const api = {
@@ -222,5 +234,21 @@ export const api = {
     fetchApi<{ success: boolean; message_id?: string }>('/whatsapp/send', {
       method: 'POST',
       body: JSON.stringify({ to, message }),
+    }),
+
+  // Ecommerce
+  createOrder: (data: CreateOrderPayload) =>
+    fetchApi<{ id: string; status: string; created_at: string }>('/orders', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  shipOrder: (id: string) =>
+    fetchApi<{ id: string; status: string; updated_at: string }>(`/orders/${id}/ship`, {
+      method: 'POST',
+    }),
+  reserveInventory: (data: ReserveInventoryPayload) =>
+    fetchApi<{ success: boolean; reservation_id?: string }>('/inventory/reserve', {
+      method: 'POST',
+      body: JSON.stringify(data),
     }),
 };
