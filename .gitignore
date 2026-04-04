@@ -1,24 +1,48 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
 # Logs
-logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+*.stderr.log
+*.stdout.log
 
-node_modules
-dist
-dist-ssr
-*.local
+# Node / Frontend
+node_modules/
+dist/
+.next/
+.nuxt/
+.cache/
+*.tsbuildinfo
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# OS
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# DB
+*.sqlite3
+db.sqlite3
+
+# Claude
+.claude/
+LOCAL_MEMORY.md
+STRATEGIC_TODO.txt
