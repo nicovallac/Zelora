@@ -15,6 +15,7 @@ interface AuthContextValue {
   token: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  refreshAgent: () => Promise<void>;
   isAuthenticated: boolean;
   isAdmin: boolean;
 }
@@ -83,6 +84,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = '/login';
   }, []);
 
+  const refreshAgent = useCallback(async () => {
+    if (!localStorage.getItem('comfa_token')) return;
+    const profile = await api.getMyAgentProfile();
+    const agentInfo: AgentInfo = {
+      id: profile.id,
+      nombre: profile.full_name?.trim() || [profile.nombre, profile.apellido].filter(Boolean).join(' ').trim() || profile.nombre,
+      email: profile.email,
+      rol: profile.rol ?? 'asesor',
+    };
+    localStorage.setItem('comfa_agent', JSON.stringify(agentInfo));
+    setAgent(agentInfo);
+  }, []);
+
   const isAuthenticated = !!token && !!agent;
   const isAdmin = agent?.rol === 'admin';
 
@@ -90,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   if (!initialized) return null;
 
   return (
-    <AuthContext.Provider value={{ agent, token, login, logout, isAuthenticated, isAdmin }}>
+    <AuthContext.Provider value={{ agent, token, login, logout, refreshAgent, isAuthenticated, isAdmin }}>
       {children}
     </AuthContext.Provider>
   );

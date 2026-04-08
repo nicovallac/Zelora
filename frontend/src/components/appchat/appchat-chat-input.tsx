@@ -15,7 +15,7 @@ export function AppChatChatInput({
 }: {
   input: string;
   sending: boolean;
-  inputRef: RefObject<HTMLInputElement>;
+  inputRef: RefObject<HTMLInputElement | null>;
   inputHeightClass: string;
   primaryColor: string;
   placeholder: string;

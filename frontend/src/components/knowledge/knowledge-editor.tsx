@@ -1,15 +1,39 @@
-import { Loader2, PencilLine, Save, Trash2 } from 'lucide-react';
+import { AlertTriangle, Loader2, PencilLine, Save, Trash2 } from 'lucide-react';
 import { Button, Card } from '../ui/primitives';
+import { DocumentAnalysisPanel } from './document-analysis-panel';
+import { FaqEditor, BusinessEditor, SalesScriptsEditor, PolicyEditor } from './structured-editors';
 import type { KnowledgeListItem } from './types';
 import type { KBArticlePurpose } from '../../services/api';
 
-const PURPOSE_OPTIONS: { value: KBArticlePurpose; label: string; hint: string; color: string }[] = [
-  { value: 'faq',             label: 'FAQ',              hint: 'Preguntas frecuentes generales',           color: 'bg-sky-50 text-sky-700 border-sky-200/70' },
-  { value: 'objection',       label: 'Objeción',         hint: 'Cómo responder cuando el cliente duda',   color: 'bg-amber-50 text-amber-700 border-amber-200/70' },
-  { value: 'closing',         label: 'Cierre',           hint: 'Frases y técnicas para cerrar ventas',    color: 'bg-emerald-50 text-emerald-700 border-emerald-200/70' },
-  { value: 'brand_voice',     label: 'Voz de marca',     hint: 'Ejemplos de respuestas on-brand',         color: 'bg-violet-50 text-violet-700 border-violet-200/70' },
-  { value: 'policy',          label: 'Política',         hint: 'Reglas de envío, pagos, devoluciones',    color: 'bg-rose-50 text-rose-700 border-rose-200/70' },
-  { value: 'product_context', label: 'Producto',         hint: 'Información profunda del catálogo',       color: 'bg-orange-50 text-orange-700 border-orange-200/70' },
+const PURPOSE_OPTIONS: { value: KBArticlePurpose; label: string; hint: string; description: string; color: string }[] = [
+  {
+    value: 'faq',
+    label: 'Preguntas frecuentes',
+    hint: 'Lo que siempre preguntan — el agente lo usa en toda conversación',
+    description: 'Preguntas y respuestas que el agente usa en cualquier etapa. Ideal para dudas recurrentes sobre el producto, proceso de compra o uso del servicio.',
+    color: 'bg-sky-50 text-sky-700 border-sky-200/70',
+  },
+  {
+    value: 'business',
+    label: 'Pitch',
+    hint: 'Quiénes somos, qué vendemos, por qué elegirnos — activa cuando el cliente explora o compara opciones',
+    description: 'Todo lo que define al negocio: qué ofreces, para quién, diferenciadores y propuesta de valor. El agente lo usa cuando el cliente está explorando o comparando opciones.',
+    color: 'bg-violet-50 text-violet-700 border-violet-200/70',
+  },
+  {
+    value: 'sales_scripts',
+    label: 'Objeciones y cierre',
+    hint: 'Qué decir cuando el cliente frena, duda o está listo para comprar',
+    description: 'Scripts para manejar objeciones ("está caro", "lo pienso") y frases de cierre. El agente los activa cuando detecta duda o intención de compra.',
+    color: 'bg-emerald-50 text-emerald-700 border-emerald-200/70',
+  },
+  {
+    value: 'policy',
+    label: 'Políticas',
+    hint: 'Devoluciones, envíos, garantías, formas de pago — activa cuando preguntan por condiciones',
+    description: 'Condiciones del negocio: devoluciones, envíos, garantías, formas de pago. El agente las usa cuando el cliente pregunta por términos antes o después de comprar.',
+    color: 'bg-rose-50 text-rose-700 border-rose-200/70',
+  },
 ];
 
 function PurposeSelector({
@@ -31,7 +55,6 @@ function PurposeSelector({
             key={opt.value}
             type="button"
             onClick={() => onChange(opt.value)}
-            title={opt.hint}
             className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
               value === opt.value
                 ? opt.color + ' shadow-sm'
@@ -42,7 +65,7 @@ function PurposeSelector({
           </button>
         ))}
       </div>
-      <p className="mt-1.5 text-[11px] text-ink-400">{current.hint}</p>
+      <p className="mt-2 text-[12px] leading-relaxed text-ink-400">{current.description}</p>
     </div>
   );
 }
@@ -58,6 +81,7 @@ export function KnowledgeEditor({
   onPurposeChange,
   onSave,
   onDelete,
+  onItemAdded,
 }: {
   item: KnowledgeListItem | null;
   draftTitle: string;
@@ -69,6 +93,7 @@ export function KnowledgeEditor({
   onPurposeChange: (value: KBArticlePurpose) => void;
   onSave: () => void;
   onDelete: () => void;
+  onItemAdded?: () => void;
 }) {
   if (!item) {
     return (
@@ -82,31 +107,56 @@ export function KnowledgeEditor({
   }
 
   if (item.kind === 'archivo') {
-    const statusCopy =
-      item.processingStatus === 'ready'
-        ? 'El documento ya fue procesado y el asistente puede usarlo.'
-        : item.processingStatus === 'failed'
-          ? 'No pudimos procesar este archivo. Conviene volver a subirlo.'
-          : 'Estamos procesando este documento para convertirlo en contexto util.';
+    const isReady = item.processingStatus === 'ready';
+    const isFailed = item.processingStatus === 'failed';
+    const statusColor = isReady
+      ? 'border-emerald-200/60 bg-emerald-50/50 text-emerald-700'
+      : isFailed
+        ? 'border-red-200/60 bg-red-50/50 text-red-600'
+        : 'border-[rgba(17,17,16,0.07)] bg-[rgba(17,17,16,0.025)] text-ink-500';
+    const statusCopy = isReady
+      ? 'Procesado — el agente ya puede usar este documento.'
+      : isFailed
+        ? 'Error al procesar. Conviene eliminar y volver a subir el archivo.'
+        : 'Procesando el documento, espera un momento...';
 
     return (
-      <Card className="flex h-full min-h-0 flex-col overflow-hidden p-4">
-        <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-400">Archivo</p>
-        <h2 className="mt-2 text-[16px] font-bold text-ink-900">{item.title}</h2>
-        <p className="mt-2 text-[12px] text-ink-400">{item.preview}</p>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <Button variant="secondary" onClick={onDelete}>
-            <Trash2 size={13} />
+      <Card className="flex h-full min-h-0 flex-col overflow-y-auto p-4">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-400">Documento subido</p>
+            <h2 className="mt-1.5 text-[15px] font-bold text-ink-900 leading-tight">{item.title}</h2>
+          </div>
+          <Button variant="secondary" size="sm" onClick={onDelete}>
+            <Trash2 size={12} />
             Eliminar
           </Button>
         </div>
-        <div className="mt-4 rounded-2xl border border-[rgba(17,17,16,0.07)] bg-[rgba(17,17,16,0.025)] p-3 text-[12px] text-ink-500">{statusCopy}</div>
-        {item.content ? (
-          <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[rgba(17,17,16,0.07)] bg-white/50 p-3">
-            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-400">Texto detectado</p>
-            <p className="mt-2 whitespace-pre-wrap text-[12px] leading-6 text-ink-500">{item.content.slice(0, 1500)}</p>
+
+        {/* Status pill */}
+        <div className={`mt-3 rounded-xl border px-3 py-2 text-[12px] font-medium ${statusColor}`}>
+          {statusCopy}
+        </div>
+
+        {/* Analysis panel — only when ready */}
+        {item.rawDocument && (
+          <DocumentAnalysisPanel
+            documentId={item.rawDocument.id}
+            documentName={item.title}
+            documentText={item.content || ''}
+            processingStatus={item.processingStatus || 'pending'}
+            onItemAdded={onItemAdded}
+          />
+        )}
+
+        {/* Raw text — collapsed at bottom */}
+        {item.content && (
+          <div className="mt-4 rounded-2xl border border-[rgba(17,17,16,0.07)] bg-white/50 p-3">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-400">Texto extraído</p>
+            <p className="mt-2 whitespace-pre-wrap text-[11.5px] leading-6 text-ink-400">{item.content.slice(0, 1200)}</p>
           </div>
-        ) : null}
+        )}
       </Card>
     );
   }
@@ -125,6 +175,13 @@ export function KnowledgeEditor({
           <PencilLine size={16} className="text-brand-500" />
         </div>
 
+        {item.rawArticle?.redirect_warning && (
+          <div className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-200/80 bg-amber-50/70 px-3 py-2.5">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
+            <p className="text-[11.5px] leading-relaxed text-amber-800">{item.rawArticle.redirect_warning}</p>
+          </div>
+        )}
+
         <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
           <div>
             <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">Titulo</label>
@@ -138,15 +195,25 @@ export function KnowledgeEditor({
 
           <PurposeSelector value={draftPurpose} onChange={onPurposeChange} />
 
-          <div className="min-h-0 flex-1">
-            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">Contenido</label>
-            <textarea
-              value={draftContent}
-              onChange={(event) => onContentChange(event.target.value)}
-              rows={12}
-              className="h-full min-h-[200px] w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] leading-relaxed text-ink-800 outline-none transition focus:border-brand-400 focus:bg-white"
-              placeholder="Pega aqui informacion util para responder mejor"
-            />
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <label className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">Contenido</label>
+            {draftPurpose === 'faq' ? (
+              <FaqEditor key={item.id + '-faq'} value={draftContent} onChange={onContentChange} />
+            ) : draftPurpose === 'business' ? (
+              <BusinessEditor key={item.id + '-business'} value={draftContent} onChange={onContentChange} />
+            ) : draftPurpose === 'sales_scripts' ? (
+              <SalesScriptsEditor key={item.id + '-sales'} value={draftContent} onChange={onContentChange} />
+            ) : draftPurpose === 'policy' ? (
+              <PolicyEditor key={item.id + '-policy'} value={draftContent} onChange={onContentChange} />
+            ) : (
+              <textarea
+                value={draftContent}
+                onChange={(event) => onContentChange(event.target.value)}
+                rows={12}
+                className="h-full min-h-[200px] w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] leading-relaxed text-ink-800 outline-none transition focus:border-brand-400 focus:bg-white"
+                placeholder="Pega aqui informacion util para responder mejor"
+              />
+            )}
           </div>
         </div>
 
@@ -162,12 +229,6 @@ export function KnowledgeEditor({
         </div>
       </Card>
 
-      <Card className="p-3">
-        <p className="text-[13px] font-bold text-ink-900">Preparado para Inbox</p>
-        <p className="mt-1 text-[12px] text-ink-400">
-          Esta entrada queda lista para usarse desde conversaciones, mejorar respuestas y sugerir contexto automaticamente.
-        </p>
-      </Card>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Camera, Copy, ExternalLink, ChevronDown, Zap, MessageCircleMore, ShoppingBag, Sparkles, Globe, Instagram, MapPin, Music2 } from 'lucide-react';
 import { PageHeader } from '../components/ui/page-header';
 import { Button } from '../components/ui/primitives';
@@ -11,7 +12,6 @@ type Settings = {
   enabled: boolean;
   organizationSlug: string;
   appName: string;
-  welcomeMessage: string;
   primaryColor: string;
   accentColor: string;
   pageBackgroundColor: string;
@@ -60,7 +60,6 @@ const DEFAULT_SETTINGS: Settings = {
   enabled: false,
   organizationSlug: '',
   appName: 'App Chat',
-  welcomeMessage: 'Hola. En que podemos ayudarte desde la app?',
   primaryColor: '#18181b',
   accentColor: '#111111',
   pageBackgroundColor: '#f7f3eb',
@@ -112,6 +111,7 @@ const TEMPLATES = [
   { id: 'spotlight', label: 'Spotlight', description: 'El asesor entra primero y la marca aterriza despues.', accent: 'La composicion mas guiada y con mas actitud.' },
   { id: 'swipe_story', label: 'Swipe Story', description: 'Hero dominante con gestos: arriba abre chat y a la izquierda abre tienda.', accent: 'Pensado para una experiencia tipo TikTok o reel interactivo.' },
   { id: 'storefront', label: 'Storefront', description: 'Ordena primero el descubrimiento de tienda y luego baja al cierre por chat.', accent: 'El mas comercial. Se siente como bio page + mini storefront.' },
+  { id: 'triptych', label: 'Triptych', description: 'Fotos de producto en los costados, identidad al centro y chat integrado.', accent: 'El mas editorial y mas tienda. Las fotos flanquean la experiencia.' },
 ] as const;
 
 const COMPONENT_STYLES = [
@@ -300,12 +300,20 @@ function getLinkBlockShape(style: string) {
   }
 }
 
+function sanitizeMediaUrl(value: string) {
+  const normalized = value.trim();
+  const lowered = normalized.toLowerCase();
+  if (!normalized || lowered.startsWith('data:') || lowered.startsWith('javascript:')) {
+    return '';
+  }
+  return normalized;
+}
+
 function mapApi(connection: AppChatConnectionApiItem): Settings {
   return {
     enabled: connection.is_active,
     organizationSlug: connection.organization_slug,
     appName: connection.app_name,
-    welcomeMessage: connection.welcome_message,
     primaryColor: connection.primary_color,
     accentColor: connection.accent_color,
     pageBackgroundColor: connection.page_background_color,
@@ -320,12 +328,12 @@ function mapApi(connection: AppChatConnectionApiItem): Settings {
     socialVisibility: connection.social_visibility,
     componentStyle: connection.component_style || 'soft_cards',
     layoutTemplate: normalizeLayoutTemplate(connection.layout_template),
-    backgroundImageUrl: connection.background_image_url,
+    backgroundImageUrl: sanitizeMediaUrl(connection.background_image_url),
     fontFamily: connection.font_family,
     presentationStyle: connection.presentation_style,
     userBubbleColor: connection.user_bubble_color,
     agentBubbleColor: connection.agent_bubble_color,
-    headerLogoUrl: connection.header_logo_url,
+    headerLogoUrl: sanitizeMediaUrl(connection.header_logo_url),
     launcherLabel: connection.launcher_label,
     tickerEnabled: connection.ticker_enabled,
     tickerText: connection.ticker_text,
@@ -406,7 +414,7 @@ export function LivePreview({ s, onAvatarClick, onHeroClick }: {
   onHeroClick?: () => void;
 }) {
   const heroBackground = s.backgroundImageUrl
-    ? `linear-gradient(180deg, rgba(17,24,39,0.06), rgba(17,24,39,0.26)), url(${s.backgroundImageUrl})`
+    ? `linear-gradient(180deg, rgba(17,24,39,0.06), rgba(17,24,39,0.26)), ${s.backgroundImageUrl ? `url(${s.backgroundImageUrl})` : ''}`
     : `linear-gradient(160deg, ${s.primaryColor}30, ${s.accentColor}18 60%, rgba(255,255,255,0.9) 100%)`;
 
   const fontStack = s.fontFamily === 'Fraunces'
@@ -444,12 +452,13 @@ export function LivePreview({ s, onAvatarClick, onHeroClick }: {
         <div className="overflow-hidden rounded-[34px] border border-white/70 bg-white/90 shadow-[0_24px_90px_rgba(15,23,42,0.14)] backdrop-blur">
           {/* Hero — click to change background */}
           <section
-            className="group relative h-[220px] overflow-hidden"
-            style={{
-              background: heroBackground,
-              backgroundSize: s.backgroundImageUrl ? 'cover' : undefined,
-              backgroundPosition: 'center',
-              pointerEvents: onHeroClick ? 'auto' : 'none',
+              className="group relative h-[220px] overflow-hidden"
+              style={{
+                backgroundImage: heroBackground,
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: s.backgroundImageUrl ? 'cover' : undefined,
+                backgroundPosition: 'center',
+                pointerEvents: onHeroClick ? 'auto' : 'none',
               cursor: onHeroClick ? 'pointer' : undefined,
             }}
             onClick={onHeroClick}
@@ -673,6 +682,55 @@ function LayoutWireframe({ id }: { id: string }) {
     </svg>
   );
 
+  if (id === 'triptych') return (
+    <svg viewBox="0 0 72 101" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full">
+      {hatchDef}
+      {/* Full bg */}
+      <rect x="0" y="0" width="72" height="101" fill={c.bg}/>
+      {/* Hero top band */}
+      <rect x="0" y="0" width="72" height="38" fill={hatch}/>
+      <rect x="0" y="0" width="72" height="38" fill={c.heroBg} fillOpacity="0.42"/>
+      <path d="M16 38 Q36 32 56 38Z" fill={c.bg}/>
+      {/* Left product strip */}
+      <rect x="0" y="0" width="16" height="92" fill={c.product}/>
+      <line x1="0" y1="18.5" x2="16" y2="18.5" stroke={c.bg} strokeWidth="1.2"/>
+      <line x1="0" y1="37" x2="16" y2="37" stroke={c.bg} strokeWidth="1.2"/>
+      <line x1="0" y1="55.5" x2="16" y2="55.5" stroke={c.bg} strokeWidth="1.2"/>
+      <line x1="0" y1="74" x2="16" y2="74" stroke={c.bg} strokeWidth="1.2"/>
+      {/* Right product strip */}
+      <rect x="56" y="0" width="16" height="92" fill={c.product}/>
+      <line x1="56" y1="14" x2="72" y2="14" stroke={c.bg} strokeWidth="1.2"/>
+      <line x1="56" y1="32.5" x2="72" y2="32.5" stroke={c.bg} strokeWidth="1.2"/>
+      <line x1="56" y1="51" x2="72" y2="51" stroke={c.bg} strokeWidth="1.2"/>
+      <line x1="56" y1="69.5" x2="72" y2="69.5" stroke={c.bg} strokeWidth="1.2"/>
+      {/* Center column bg (below hero) */}
+      <rect x="16" y="38" width="40" height="54" fill={c.bg}/>
+      {/* Logo circle */}
+      <circle cx="36" cy="36" r="9" fill={c.bg} stroke={c.border} strokeWidth="1.5"/>
+      {/* App name */}
+      <rect x="24" y="48" width="24" height="2.2" rx="1.1" fill={c.text}/>
+      <rect x="28" y="52.5" width="16" height="1.6" rx="0.8" fill={c.textSub}/>
+      {/* Social icons */}
+      <rect x="25" y="57" width="5.5" height="5.5" rx="1.5" fill={c.card} stroke={c.border} strokeWidth="0.7"/>
+      <rect x="33.25" y="57" width="5.5" height="5.5" rx="1.5" fill={c.card} stroke={c.border} strokeWidth="0.7"/>
+      <rect x="41.5" y="57" width="5.5" height="5.5" rx="1.5" fill={c.card} stroke={c.border} strokeWidth="0.7"/>
+      {/* Chat box */}
+      <rect x="18" y="66" width="36" height="22" rx="3" fill={c.card} stroke={c.border} strokeWidth="0.7"/>
+      <rect x="21" y="70" width="22" height="1.8" rx="0.9" fill={c.chat}/>
+      <rect x="25" y="74" width="16" height="1.8" rx="0.9" fill={c.chat}/>
+      <rect x="21" y="78.5" width="25" height="3" rx="1.5" fill={c.bg} stroke={c.border} strokeWidth="0.5"/>
+      <circle cx="49" cy="80" r="2" fill={c.primary} stroke={c.border} strokeWidth="0.5"/>
+      {/* Bottom bar */}
+      <rect x="0" y="92" width="72" height="9" fill={c.bg}/>
+      <line x1="0" y1="92" x2="72" y2="92" stroke={c.border} strokeWidth="0.6"/>
+      <circle cx="18" cy="96.5" r="2.5" fill={c.card} stroke={c.border} strokeWidth="0.6"/>
+      <circle cx="36" cy="96.5" r="2.5" fill={c.primary} stroke={c.border} strokeWidth="0.6"/>
+      <circle cx="54" cy="96.5" r="2.5" fill={c.card} stroke={c.border} strokeWidth="0.6"/>
+      {/* Store badge top-left */}
+      <circle cx="8" cy="8" r="4.5" fill={c.bg} fillOpacity="0.82" stroke={c.border} strokeWidth="0.7"/>
+    </svg>
+  );
+
   if (id === 'storefront') return (
     <svg viewBox="0 0 72 101" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full">
       {hatchDef}
@@ -702,15 +760,16 @@ function LayoutWireframe({ id }: { id: string }) {
   return null;
 }
 
-function AppChatPreviewCard({ s, onAvatarClick, onHeroClick }: {
+function AppChatPreviewCard({ s, agentGreeting, onAvatarClick, onHeroClick }: {
   s: Settings;
+  agentGreeting: string;
   onAvatarClick?: () => void;
   onHeroClick?: () => void;
 }) {
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [placeholderVisible, setPlaceholderVisible] = useState(true);
   const heroBackground = s.backgroundImageUrl
-    ? `linear-gradient(180deg, rgba(17,24,39,0.06), rgba(17,24,39,0.26)), url(${s.backgroundImageUrl})`
+    ? `linear-gradient(180deg, rgba(17,24,39,0.06), rgba(17,24,39,0.26)), ${s.backgroundImageUrl ? `url(${s.backgroundImageUrl})` : ''}`
     : `linear-gradient(160deg, ${s.primaryColor}30, ${s.accentColor}18 60%, rgba(255,255,255,0.9) 100%)`;
   const fontStack = s.fontFamily === 'Fraunces'
     ? '"Fraunces", Georgia, serif'
@@ -801,7 +860,7 @@ function AppChatPreviewCard({ s, onAvatarClick, onHeroClick }: {
         </div>
         <div className="min-w-0">
           <p className={`text-[9px] font-semibold uppercase tracking-[0.14em] ${layoutTemplate === 'spotlight' || s.componentStyle === 'solid_pop' ? 'text-white/70' : 'text-ink-400'}`}>Sales Agent</p>
-          <p className={`mt-1 line-clamp-2 text-[11.5px] leading-4 ${layoutTemplate === 'spotlight' || s.componentStyle === 'solid_pop' ? 'text-white' : 'text-ink-700'}`}>{s.welcomeMessage || 'Estoy aqui para ayudarte.'}</p>
+          <p className={`mt-1 line-clamp-2 text-[11.5px] leading-4 ${layoutTemplate === 'spotlight' || s.componentStyle === 'solid_pop' ? 'text-white' : 'text-ink-700'}`}>{agentGreeting || 'Estoy aqui para ayudarte.'}</p>
         </div>
       </div>
     </div>
@@ -894,12 +953,13 @@ function AppChatPreviewCard({ s, onAvatarClick, onHeroClick }: {
       <div className="overflow-hidden rounded-[34px] shadow-[0_24px_90px_rgba(15,23,42,0.14)]">
       <div className="relative mx-auto flex h-[560px] w-full max-w-[430px] flex-col overflow-hidden" style={{ backgroundColor: s.pageBackgroundColor }}>
         <section
-          className="group relative overflow-hidden"
-          style={{
-            background: heroBackground,
-            backgroundSize: s.backgroundImageUrl ? 'cover' : undefined,
-            backgroundPosition: 'center',
-            pointerEvents: onHeroClick ? 'auto' : 'none',
+            className="group relative overflow-hidden"
+            style={{
+              backgroundImage: heroBackground,
+              backgroundRepeat: 'no-repeat',
+              backgroundSize: s.backgroundImageUrl ? 'cover' : undefined,
+              backgroundPosition: 'center',
+              pointerEvents: onHeroClick ? 'auto' : 'none',
             cursor: onHeroClick ? 'pointer' : undefined,
             height: `${heroHeight}px`,
           }}
@@ -1065,7 +1125,7 @@ function AppChatPreviewCard({ s, onAvatarClick, onHeroClick }: {
                     )}
                     <div className="flex min-w-0 flex-col gap-1">
                       <div className={`rounded-[16px] border border-[rgba(17,17,16,0.07)] text-ink-800 shadow-[0_4px_12px_rgba(15,23,42,0.022)] ${bubblePadding}`} style={{ backgroundColor: s.agentBubbleColor || '#ffffff' }}>
-                        <p className={`line-clamp-3 whitespace-pre-wrap tracking-[-0.01em] ${bubbleTextClass}`}>{s.welcomeMessage || 'Hola. En que podemos ayudarte?'}</p>
+                        <p className={`line-clamp-3 whitespace-pre-wrap tracking-[-0.01em] ${bubbleTextClass}`}>{agentGreeting || 'Hola. En que podemos ayudarte?'}</p>
                       </div>
                       <span className="px-1 text-[10px] text-slate-400">12:41 p. m.</span>
                     </div>
@@ -1189,6 +1249,7 @@ function SectionCard({ eyebrow, title, step, children }: { eyebrow: string; titl
 export function AppChatPage() {
   const { showError, showSuccess } = useNotification();
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [agentGreeting, setAgentGreeting] = useState('');
   const [saving, setSaving] = useState(false);
   const [technicalOpen, setTechnicalOpen] = useState(false);
   const [iosBundleText, setIosBundleText] = useState('');
@@ -1198,6 +1259,7 @@ export function AppChatPage() {
   const heroInputRef = useRef<HTMLInputElement>(null);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [cropTarget, setCropTarget] = useState<'avatar' | 'hero' | null>(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const activePresetId = useMemo(() => {
     const match = PRESETS.find((preset) =>
       preset.primaryColor === settings.primaryColor &&
@@ -1235,13 +1297,14 @@ export function AppChatPage() {
   ]);
 
   useEffect(() => {
-    api.getAppChatConnection()
-      .then((data) => {
+    Promise.all([api.getAppChatConnection(), api.getOnboardingProfile()])
+      .then(([data, profile]) => {
         const mapped = mapApi(data);
         setSettings(mapped);
         setIosBundleText(mapped.iosBundleIds.join('\n'));
         setAndroidPackageText(mapped.androidPackageNames.join('\n'));
         setAllowedOriginsText(mapped.allowedOrigins.join('\n'));
+        setAgentGreeting(profile.sales_agent_profile?.greeting_message || profile.general_agent_profile?.greeting_message || '');
       })
       .catch((error) => showError('App Chat', error instanceof Error ? error.message : 'No se pudo cargar App Chat.'));
   }, [showError]);
@@ -1278,11 +1341,21 @@ export function AppChatPage() {
     e.target.value = '';
   }
 
-  function handleCropApply(croppedUrl: string) {
-    if (cropTarget === 'avatar') set('headerLogoUrl', croppedUrl);
-    if (cropTarget === 'hero') set('backgroundImageUrl', croppedUrl);
-    setCropSrc(null);
-    setCropTarget(null);
+  async function handleCropApply(croppedFile: File) {
+    if (!cropTarget) return;
+    setUploadingMedia(true);
+    try {
+      const uploaded = await api.uploadAppChatMedia(croppedFile, cropTarget === 'avatar' ? 'logo' : 'hero');
+      if (cropTarget === 'avatar') set('headerLogoUrl', uploaded.url);
+      if (cropTarget === 'hero') set('backgroundImageUrl', uploaded.url);
+      setCropSrc(null);
+      setCropTarget(null);
+      showSuccess('Media actualizada');
+    } catch (error) {
+      showError('App Chat', error instanceof Error ? error.message : 'No se pudo subir la imagen.');
+    } finally {
+      setUploadingMedia(false);
+    }
   }
 
   function handleCropCancel() {
@@ -1309,12 +1382,14 @@ export function AppChatPage() {
       return;
     }
 
+    const safeBackgroundImageUrl = sanitizeMediaUrl(settings.backgroundImageUrl);
+    const safeHeaderLogoUrl = sanitizeMediaUrl(settings.headerLogoUrl);
+
     setSaving(true);
     try {
       const updated = await api.updateAppChatConnection({
         is_active: settings.enabled,
         app_name: settings.appName,
-        welcome_message: settings.welcomeMessage,
         primary_color: settings.primaryColor,
         accent_color: settings.accentColor,
         page_background_color: settings.pageBackgroundColor,
@@ -1329,12 +1404,12 @@ export function AppChatPage() {
         social_visibility: settings.socialVisibility,
         component_style: settings.componentStyle,
         layout_template: settings.layoutTemplate,
-        background_image_url: settings.backgroundImageUrl,
+        background_image_url: safeBackgroundImageUrl,
         font_family: settings.fontFamily,
         presentation_style: settings.presentationStyle,
         user_bubble_color: settings.userBubbleColor,
         agent_bubble_color: settings.agentBubbleColor,
-        header_logo_url: settings.headerLogoUrl,
+        header_logo_url: safeHeaderLogoUrl,
         launcher_label: settings.launcherLabel,
         ticker_enabled: settings.tickerEnabled,
         ticker_text: settings.tickerText,
@@ -1622,7 +1697,13 @@ export function AppChatPage() {
               </div>
               <div className="mt-3">
                 <Field label="Mensaje de bienvenida">
-                  <textarea value={settings.welcomeMessage} onChange={(e) => set('welcomeMessage', e.target.value)} rows={3} placeholder="Hola, en que podemos ayudarte?" className={inputClass} style={{ resize: 'none' }} />
+                  <div className="rounded-xl border border-[rgba(17,17,16,0.09)] bg-[rgba(17,17,16,0.02)] px-3 py-2.5">
+                    <p className="text-[13px] text-ink-700 leading-relaxed">{agentGreeting || <span className="text-ink-400 italic">Sin mensaje configurado</span>}</p>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <span className="text-[10px] text-ink-400">Configurable en</span>
+                      <Link to="/admin/agents" className="text-[10px] font-semibold text-brand-600 hover:underline">Agentes → Identidad →</Link>
+                    </div>
+                  </div>
                 </Field>
               </div>
               <div className="mt-3">
@@ -1882,6 +1963,7 @@ export function AppChatPage() {
                 {/* Scaled 1:1 preview — bleeds to card edges */}
                 <AppChatPreviewCard
                   s={settings}
+                  agentGreeting={agentGreeting}
                   onAvatarClick={() => avatarInputRef.current?.click()}
                   onHeroClick={() => heroInputRef.current?.click()}
                 />
@@ -1900,9 +1982,9 @@ export function AppChatPage() {
                   </div>
                 ) : null}
                 <div className="border-t border-[rgba(17,17,16,0.07)] p-3">
-                  <Button className="w-full" size="sm" onClick={() => void save()} disabled={saving}>
+                  <Button className="w-full" size="sm" onClick={() => void save()} disabled={saving || uploadingMedia}>
                     <Zap size={13} />
-                    {saving ? 'Guardando...' : 'Guardar cambios'}
+                    {uploadingMedia ? 'Subiendo media...' : saving ? 'Guardando...' : 'Guardar cambios'}
                   </Button>
                 </div>
               </div>

@@ -41,7 +41,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
-        <Route path="/webapp/demo" element={<WebWidgetDemoPage />} />
+        <Route path="/web-widget/demo" element={<WebWidgetDemoPage />} />
         <Route path="/:orgSlug" element={<AppChatPublicPage />} />
         <Route path="/app-chat/open/:orgSlug" element={<AppChatPublicPage />} />
         <Route path="/shop/:orgSlug/:productId" element={<ProductPublicPage />} />
@@ -55,7 +55,8 @@ export default function App() {
         >
           <Route path="/" element={<DashboardPage />} />
           <Route path="/whatsapp" element={<Navigate to="/not-found" replace />} />
-          <Route path="/webapp" element={<WebAppPage />} />
+          <Route path="/web-widget" element={<WebAppPage />} />
+          <Route path="/webapp" element={<Navigate to="/web-widget" replace />} />
           <Route path="/app-chat" element={<AppChatPage />} />
           <Route path="/inbox" element={<InboxPage />} />
 <Route path="/analytics" element={<Navigate to="/" replace />} />
@@ -83,7 +84,6 @@ export default function App() {
           <Route path="/workspace/actions" element={<Navigate to="/inbox" replace />} />
           <Route path="/integrations" element={<IntegrationsPage />} />
           <Route path="/not-found" element={<NotFoundPage />} />
-          <Route path="/settings" element={<Navigate to="/admin/organizations" replace />} />
           <Route path="/billing" element={<Navigate to="/admin/organizations" replace />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route

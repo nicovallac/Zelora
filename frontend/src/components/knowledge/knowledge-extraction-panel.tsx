@@ -1,17 +1,32 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, FileText, Loader2, RefreshCw, Sparkles, X } from 'lucide-react';
+import { Bot, Check, Loader2, RefreshCw, Sparkles, X } from 'lucide-react';
 
 import { api } from '../../services/api';
 import type { DocumentExtractionCandidateApiItem } from '../../services/api';
 import { useNotification } from '../../contexts/NotificationContext';
-import { Button, Card } from '../ui/primitives';
+import { Button } from '../ui/primitives';
 
 const KIND_LABELS: Record<DocumentExtractionCandidateApiItem['kind'], string> = {
   service: 'Servicio',
   pricing_rule: 'Precio',
   policy: 'Politica',
   flow_hint: 'Flow',
+  ai_summary: 'Resumen IA',
+  ai_qa: 'FAQ IA',
 };
+
+const KIND_COLORS: Record<DocumentExtractionCandidateApiItem['kind'], string> = {
+  service: 'bg-sky-50 text-sky-700 border-sky-200/60',
+  pricing_rule: 'bg-emerald-50 text-emerald-700 border-emerald-200/60',
+  policy: 'bg-amber-50 text-amber-700 border-amber-200/60',
+  flow_hint: 'bg-purple-50 text-purple-700 border-purple-200/60',
+  ai_summary: 'bg-brand-50 text-brand-700 border-brand-200/60',
+  ai_qa: 'bg-brand-50 text-brand-700 border-brand-200/60',
+};
+
+function isAiKind(kind: DocumentExtractionCandidateApiItem['kind']) {
+  return kind === 'ai_summary' || kind === 'ai_qa';
+}
 
 export function KnowledgeExtractionPanel() {
   const { showError, showSuccess } = useNotification();
@@ -43,6 +58,7 @@ export function KnowledgeExtractionPanel() {
 
   const stats = useMemo(() => ({
     total: items.length,
+    ai: items.filter((item) => isAiKind(item.kind)).length,
     services: items.filter((item) => item.kind === 'service').length,
     pricing: items.filter((item) => item.kind === 'pricing_rule').length,
     policies: items.filter((item) => item.kind === 'policy').length,
@@ -108,15 +124,11 @@ export function KnowledgeExtractionPanel() {
   const allVisibleSelected = items.length > 0 && selectedIds.length === items.length;
 
   return (
-    <Card className="min-h-0 flex-1 overflow-hidden p-4">
+    <div className="p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <FileText size={15} className="text-brand-500" />
-            <p className="text-[14px] font-bold text-ink-900">Revision documental</p>
-          </div>
-          <p className="mt-1 text-[12px] text-ink-500">
-            Convierte documentos en servicios, precios, politicas o sugerencias de flujo.
+          <p className="text-[12px] text-ink-500">
+            Ambos análisis (IA + estructural) corren en paralelo al subir el documento. Revisa y aprueba para añadirlos a KB.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -133,11 +145,15 @@ export function KnowledgeExtractionPanel() {
 
       <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
         <span className="rounded-full bg-[rgba(17,17,16,0.05)] px-3 py-1.5 font-semibold text-ink-700">{stats.total} pendientes</span>
+        {stats.ai > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full border border-brand-200/60 bg-brand-50 px-3 py-1.5 font-semibold text-brand-700">
+            <Bot size={10} /> {stats.ai} por IA
+          </span>
+        )}
         <span className="rounded-full bg-[rgba(17,17,16,0.05)] px-3 py-1.5 font-semibold text-ink-700">{stats.services} servicios</span>
         <span className="rounded-full bg-[rgba(17,17,16,0.05)] px-3 py-1.5 font-semibold text-ink-700">{stats.pricing} precios</span>
         <span className="rounded-full bg-[rgba(17,17,16,0.05)] px-3 py-1.5 font-semibold text-ink-700">{stats.policies} politicas</span>
         <span className="rounded-full bg-[rgba(17,17,16,0.05)] px-3 py-1.5 font-semibold text-ink-700">{stats.flows} flows</span>
-        <span className="rounded-full bg-[rgba(17,17,16,0.05)] px-3 py-1.5 font-semibold text-ink-700">Subes / detectamos / apruebas</span>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -183,7 +199,10 @@ export function KnowledgeExtractionPanel() {
           </div>
         ) : (
           items.map((item) => (
-            <div key={item.id} className="rounded-2xl border border-[rgba(17,17,16,0.08)] bg-white/80 p-4">
+            <div
+              key={item.id}
+              className={`rounded-2xl border p-4 ${isAiKind(item.kind) ? 'border-brand-200/60 bg-brand-50/30' : 'border-[rgba(17,17,16,0.08)] bg-white/80'}`}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -196,13 +215,14 @@ export function KnowledgeExtractionPanel() {
                         )
                       }
                     />
-                    <p className="text-[14px] font-bold text-ink-900">{item.title}</p>
-                    <span className="rounded-full bg-[rgba(17,17,16,0.06)] px-2 py-0.5 text-[10px] font-semibold text-ink-700">
+                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${KIND_COLORS[item.kind]}`}>
+                      {isAiKind(item.kind) && <Bot size={9} />}
                       {KIND_LABELS[item.kind]}
                     </span>
-                    <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
-                      {(item.confidence * 100).toFixed(0)}%
+                    <span className="rounded-full bg-[rgba(17,17,16,0.06)] px-2 py-0.5 text-[10px] font-semibold text-ink-600">
+                      {(item.confidence * 100).toFixed(0)}% confianza
                     </span>
+                    <p className="text-[13px] font-semibold text-ink-900">{item.title}</p>
                   </div>
                   <p className="mt-1 text-[12px] text-ink-500">Fuente: {item.source_document_name}</p>
                 </div>
@@ -219,13 +239,15 @@ export function KnowledgeExtractionPanel() {
               </div>
 
               <div className="mt-3 rounded-2xl bg-[rgba(17,17,16,0.025)] p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">Contenido</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+                  {isAiKind(item.kind) ? 'Generado por IA' : 'Detectado estructuralmente'}
+                </p>
                 <p className="mt-2 text-[13px] leading-6 text-ink-700">{item.body || 'Sin cuerpo adicional.'}</p>
               </div>
             </div>
           ))
         )}
       </div>
-    </Card>
+    </div>
   );
 }

@@ -22,7 +22,7 @@ export function EmptyInboxState() {
             <ArrowRight size={14} />
           </Link>
           <Link
-            to="/webapp"
+            to="/web-widget"
             className="inline-flex items-center justify-center gap-2 rounded-full border border-[rgba(17,17,16,0.12)] bg-[rgba(255,255,255,0.75)] px-4 py-1.5 text-[12px] font-semibold text-ink-700 transition hover:bg-white"
           >
             Probar Web Widget

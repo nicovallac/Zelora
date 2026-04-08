@@ -268,6 +268,7 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
   const [tagsInput, setTagsInput] = useState(product.tags.join(', '));
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [cropIndex, setCropIndex] = useState<number | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const checklist = getEditorChecklist(draft.offerType);
 
   function appendImage(imageUrl: string) {
@@ -287,15 +288,15 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
   function handleImageUpload(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    const remaining = Math.max(0, 5 - draft.images.length);
-    files.slice(0, remaining).forEach((file, index) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setCropSrc(reader.result as string);
-        setCropIndex(draft.images.length + index);
-      };
-      reader.readAsDataURL(file);
-    });
+    const file = files[0];
+    if (!file) return;
+    const nextIndex = draft.images.length;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropSrc(reader.result as string);
+      setCropIndex(nextIndex);
+    };
+    reader.readAsDataURL(file);
     e.target.value = '';
   }
 
@@ -332,15 +333,23 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
     setCropIndex(index);
   }
 
-  function handleCropApply(croppedUrl: string) {
+  async function handleCropApply(croppedFile: File) {
     if (cropIndex === null) return;
-    if (cropIndex >= draft.images.length) {
-      appendImage(croppedUrl);
-    } else {
-      updateImage(cropIndex, croppedUrl);
+    setUploadingImage(true);
+    try {
+      const uploaded = await api.uploadProductImage(croppedFile);
+      if (cropIndex >= draft.images.length) {
+        appendImage(uploaded.url);
+      } else {
+        updateImage(cropIndex, uploaded.url);
+      }
+      setCropSrc(null);
+      setCropIndex(null);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'No se pudo subir la imagen.');
+    } finally {
+      setUploadingImage(false);
     }
-    setCropSrc(null);
-    setCropIndex(null);
   }
 
   function handleCropCancel() {
@@ -845,7 +854,9 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
             {draft.offerType === 'hybrid' && 'Se guardará como oferta híbrida con logística y prestación.'}
           </p>
           <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" onClick={handleSave} disabled={!isValid}>Guardar oferta</Button>
+          <Button variant="primary" onClick={handleSave} disabled={!isValid || uploadingImage}>
+            {uploadingImage ? 'Subiendo imagen...' : 'Guardar oferta'}
+          </Button>
         </div>
       </div>
       {cropSrc ? (

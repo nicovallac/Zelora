@@ -1,5 +1,4 @@
-import { Link } from 'react-router-dom';
-import { ArrowRight, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { Button } from '../ui/primitives';
 import { PageHeader } from '../ui/page-header';
 import type { DashboardMaturity } from './types';
@@ -55,19 +54,10 @@ export function DashboardHeader({
         </span>
       }
       actions={
-        <>
-          <Button variant="secondary" size="sm" onClick={onRefresh}>
-            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
-            Actualizar
-          </Button>
-          <Link
-            to={maturity === 'nuevo' ? '/onboarding' : '/inbox'}
-            className="inline-flex items-center gap-1.5 rounded-full bg-brand-500 px-5 py-2 text-[13px] font-semibold text-white shadow-card transition-all duration-200 hover:bg-brand-500 hover:-translate-y-px"
-          >
-            {maturity === 'nuevo' ? 'Seguir activando' : 'Ir a inbox'}
-            <ArrowRight size={13} />
-          </Link>
-        </>
+        <Button variant="secondary" size="sm" onClick={onRefresh}>
+          <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+          Actualizar
+        </Button>
       }
     />
   );

@@ -79,7 +79,7 @@ export function AppChatCatalogPanel({
   products: PublicProductApiItem[];
   orgSlug: string;
   heroHeight: number;
-  scrollerRef: RefObject<HTMLDivElement>;
+  scrollerRef: RefObject<HTMLDivElement | null>;
   onQueryChange: (v: string) => void;
   onClose: () => void;
   onAskAbout: (product: PublicProductApiItem) => void;

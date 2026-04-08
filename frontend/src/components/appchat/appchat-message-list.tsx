@@ -38,7 +38,7 @@ export function AppChatMessageList({
   messages: MessageItem[];
   typingMessage: MessageItem | null;
   isBotTyping: boolean;
-  scrollerRef: RefObject<HTMLDivElement>;
+  scrollerRef: RefObject<HTMLDivElement | null>;
   messageGap: string;
   fontSize: string;
   bubbleRadius: string;

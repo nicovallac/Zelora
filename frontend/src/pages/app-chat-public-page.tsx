@@ -6,7 +6,7 @@ import { api } from '../services/api';
 import type { AppChatPublicConfig, MessageItem, PublicProductApiItem } from '../services/api';
 import { AppChatMessageList } from '../components/appchat/appchat-message-list';
 import { AppChatChatInput } from '../components/appchat/appchat-chat-input';
-import { AppChatCatalogGrid, AppChatCatalogPanel } from '../components/appchat/appchat-catalog-grid';
+import { AppChatCatalogPanel } from '../components/appchat/appchat-catalog-grid';
 import {
   buildTickerLoop,
   getBackgroundFill,
@@ -498,6 +498,216 @@ export function AppChatPublicPage() {
     return <div className="flex min-h-dvh items-center justify-center bg-[rgba(17,17,16,0.06)] px-6 text-center text-ink-600">{error}</div>;
   }
 
+  // --- Triptych layout (3-column: product strips left+right, content center) ---
+
+  if (layoutTemplate === 'triptych') {
+    const stripItems = products.length === 0
+      ? (new Array(12).fill(null) as null[])
+      : [...products, ...products, ...products].slice(0, 14);
+
+    return (
+      <div className="h-dvh overflow-hidden" style={{ background: shellBackground, fontFamily: getFontStack(config.font_family) }}>
+        <div className="relative mx-auto h-dvh w-full max-w-[430px] overflow-hidden" style={{ backgroundColor: config.page_background_color }}>
+
+          {/* Hero background – full width */}
+          <div
+            className="absolute inset-x-0 top-0 overflow-hidden"
+            style={{ height: heroHeight, backgroundImage: heroBackground, backgroundRepeat: 'no-repeat', backgroundSize: config.background_image_url ? 'cover' : undefined, backgroundPosition: 'center', zIndex: 0 }}
+          >
+            {config.ticker_enabled && config.ticker_text ? (
+              <svg key={`${config.ticker_text}-on`} viewBox="0 0 100 24" className="pointer-events-none absolute inset-x-0 bottom-[-1px] z-10 w-full" style={{ height: `${bannerHeight}px` }} preserveAspectRatio="none" aria-hidden="true">
+                <defs><path id="appchatTickerArcT" d="M 4 15 Q 50 1 96 15" /></defs>
+                <path d="M 0 24 Q 50 -1 100 24 L 100 24 L 0 24 Z" fill={config.page_background_color} fillOpacity="0.98" />
+                <text fill={`rgba(17,17,16,${bannerTextOpacity})`} fontSize={bannerTextSize} fontWeight="600" letterSpacing="0.35"><textPath href="#appchatTickerArcT" startOffset={primaryTickerOffset}>{tickerLoop}</textPath></text>
+                <text fill={`rgba(17,17,16,${bannerTextOpacity})`} fontSize={bannerTextSize} fontWeight="600" letterSpacing="0.35"><textPath href="#appchatTickerArcT" startOffset={secondaryTickerOffset}>{tickerLoop}</textPath></text>
+              </svg>
+            ) : null}
+            <div className={`absolute inset-x-0 bottom-[-1px] ${curveHeight} ${curveRadius}`} style={{ backgroundColor: config.page_background_color }} />
+          </div>
+
+          {/* Left product strip */}
+          <div className="absolute left-0 top-0 overflow-hidden" style={{ width: '22%', bottom: '52px', zIndex: 2 }}>
+            <div className="flex flex-col">
+              {stripItems.map((product, i) =>
+                product ? (
+                  <a key={`ls-${i}`} href={`/shop/${orgSlug}/${product.id}`} className="block w-full shrink-0 overflow-hidden">
+                    <img src={getPromoCardImage(product, i)} alt={product.title} className="aspect-[0.72] w-full object-cover" />
+                  </a>
+                ) : (
+                  <div key={`ls-${i}`} className="aspect-[0.72] w-full shrink-0" style={{ backgroundColor: `${config.primary_color}14` }} />
+                )
+              )}
+            </div>
+          </div>
+
+          {/* Right product strip (offset so images don't mirror exactly) */}
+          <div className="absolute right-0 top-0 overflow-hidden" style={{ width: '22%', bottom: '52px', zIndex: 2 }}>
+            <div className="flex flex-col" style={{ marginTop: '-22%' }}>
+              {[...stripItems].reverse().map((product, i) =>
+                product ? (
+                  <a key={`rs-${i}`} href={`/shop/${orgSlug}/${product.id}`} className="block w-full shrink-0 overflow-hidden">
+                    <img src={getPromoCardImage(product, i)} alt={product.title} className="aspect-[0.72] w-full object-cover" />
+                  </a>
+                ) : (
+                  <div key={`rs-${i}`} className="aspect-[0.72] w-full shrink-0" style={{ backgroundColor: `${config.accent_color}14` }} />
+                )
+              )}
+            </div>
+          </div>
+
+          {/* Store/tienda button – top-left corner over strip */}
+          <button
+            type="button"
+            onClick={openCatalog}
+            className="absolute top-0 left-0 z-[15] flex items-center justify-center"
+            style={{ width: '22%', height: '52px' }}
+            aria-label="Ver tienda"
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-full shadow-sm backdrop-blur-sm" style={{ backgroundColor: `${config.page_background_color}cc` }}>
+              <ShoppingBag size={13} style={{ color: config.primary_color }} />
+            </span>
+          </button>
+
+          {/* Logo overlay – centered in center column at hero bottom */}
+          <div
+            className="pointer-events-none absolute z-[12] flex -translate-y-1/2 justify-center"
+            style={{ top: `${heroHeight}px`, left: '22%', right: '22%' }}
+          >
+            {logoEl}
+          </div>
+
+          {/* Center column – below hero */}
+          <div
+            className="absolute z-[5] flex flex-col overflow-hidden"
+            style={{
+              left: '22%', right: '22%',
+              top: `${heroHeight}px`,
+              bottom: '52px',
+              backgroundColor: config.page_background_color,
+              paddingTop: `${Math.max(logoSize / 2 + 8, 48)}px`,
+            }}
+          >
+            <div className="px-3">
+              {/* Identity */}
+              <div className="text-center">
+                <p className="text-[1.15rem] font-semibold leading-tight tracking-[-0.06em] text-ink-950">{config.app_name}</p>
+                <p className="mt-1 text-[8.5px] uppercase tracking-[0.28em] text-ink-400">{config.launcher_label || 'Virtual Store'}</p>
+              </div>
+              {/* Social links */}
+              {socialItems.length > 0 ? (
+                <div className="mt-2.5 flex items-center justify-center gap-2">
+                  {socialItems.map((item, index) => (
+                    <a key={`${item.href}-${index}`} href={item.href} target="_blank" rel="noreferrer"
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-full ${skin.social}`}
+                      style={skin.socialStyle}
+                    >
+                      {item.icon}
+                    </a>
+                  ))}
+                </div>
+              ) : null}
+              {/* Mini store button (only if featured products disabled) */}
+              {!config.show_featured_products ? (
+                <div className="mt-2.5 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={openCatalog}
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] transition hover:opacity-90 ${miniStoreButtonClass}`}
+                    style={{ ...skin.secondaryStyle, color: config.primary_color }}
+                  >
+                    <ShoppingBag size={10} />
+                    Ver tienda
+                  </button>
+                </div>
+              ) : null}
+              {/* Featured products carousel (if enabled) */}
+              {config.show_featured_products && getPromoCards(products).length > 0 ? (
+                <div className="mt-2.5 -mx-3 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <div className="flex gap-1">
+                    {getPromoCards(products).map((product, index) => (
+                      <a key={product.id} href={`/shop/${orgSlug}/${product.id}`}
+                        className={`group shrink-0 overflow-hidden ${carouselCardClass} ${skin.card}`}
+                        style={{ ...skin.cardStyle, width: `${productCardWidth - 14}px` }}
+                      >
+                        <img src={getPromoCardImage(product, index)} alt={product.title} className="aspect-[0.74] h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" />
+                      </a>
+                    ))}
+                    <a href="#catalogo" onClick={(e) => { e.preventDefault(); openCatalog(); }}
+                      className={`flex shrink-0 flex-col items-center justify-center px-1.5 py-2 text-center ${carouselCardClass} ${skin.softCard}`}
+                      style={{ ...skin.softCardStyle, width: `${productCardWidth - 14}px` }}
+                    >
+                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/70 text-ink-900"><ShoppingBag size={10} /></span>
+                      <span className="mt-1 text-[8px] font-semibold uppercase tracking-[0.14em] text-ink-500">Ver</span>
+                    </a>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {/* Chat area */}
+            <div className="mx-3 mt-3 flex min-h-0 flex-1 flex-col overflow-hidden border-t border-[rgba(17,17,16,0.05)] pt-3">
+              <AppChatMessageList {...messageListProps} />
+              <div className="shrink-0 border-t border-[rgba(17,17,16,0.05)] pt-2.5">
+                {error ? <p className="mb-1.5 text-xs text-rose-600">{error}</p> : null}
+                <AppChatChatInput {...chatInputProps} showGradientLine />
+              </div>
+            </div>
+          </div>
+
+          {/* Catalog panel – full width */}
+          <AppChatCatalogPanel
+            open={catalogOpen}
+            catalogQuery={catalogQuery}
+            products={filteredProducts}
+            orgSlug={orgSlug}
+            heroHeight={heroHeight}
+            scrollerRef={catalogScrollerRef}
+            onQueryChange={setCatalogQuery}
+            onClose={() => setCatalogOpen(false)}
+            onAskAbout={askAboutProduct}
+          />
+
+          {/* Bottom action bar */}
+          <div
+            className="absolute bottom-0 inset-x-0 z-[15] flex h-[52px] items-center justify-around border-t border-[rgba(17,17,16,0.06)]"
+            style={{ backgroundColor: config.page_background_color }}
+          >
+            <button type="button" onClick={openCatalog}
+              className="flex h-9 w-9 items-center justify-center rounded-full transition hover:opacity-70"
+              style={{ color: config.primary_color }}
+              aria-label="Abrir tienda"
+            >
+              <ShoppingBag size={16} />
+            </button>
+            {socialItems[0] ? (
+              <a href={socialItems[0].href} target="_blank" rel="noreferrer"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-ink-500 transition hover:opacity-70"
+              >
+                {socialItems[0].icon}
+              </a>
+            ) : (
+              <span className="flex h-9 w-9 items-center justify-center">
+                <span className="h-1.5 w-1.5 rounded-full bg-ink-200" />
+              </span>
+            )}
+            {socialItems[1] ? (
+              <a href={socialItems[1].href} target="_blank" rel="noreferrer"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-ink-500 transition hover:opacity-70"
+              >
+                {socialItems[1].icon}
+              </a>
+            ) : (
+              <span className="flex h-9 w-9 items-center justify-center">
+                <span className="h-1.5 w-1.5 rounded-full bg-ink-200" />
+              </span>
+            )}
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="h-dvh overflow-hidden"
@@ -510,11 +720,12 @@ export function AppChatPublicPage() {
         {/* Hero */}
         <section
           className="relative overflow-hidden"
-          style={{
-            background: heroBackground,
-            backgroundSize: config.background_image_url ? 'cover' : undefined,
-            backgroundPosition: 'center',
-            height: `${heroHeight}px`,
+            style={{
+              backgroundImage: heroBackground,
+              backgroundRepeat: 'no-repeat',
+              backgroundSize: config.background_image_url ? 'cover' : undefined,
+              backgroundPosition: 'center',
+              height: `${heroHeight}px`,
           }}
         >
           {config.ticker_enabled && config.ticker_text ? (

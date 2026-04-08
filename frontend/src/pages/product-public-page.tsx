@@ -129,7 +129,8 @@ export function ProductPublicPage() {
   const cardShellStyle = {
     ...skin.cardStyle,
     borderColor: `${config.primary_color}22`,
-    background: cardShellBackground,
+    backgroundImage: cardShellBackground,
+    backgroundRepeat: 'no-repeat',
     backgroundSize: config.background_image_url ? 'cover' : undefined,
     backgroundPosition: config.background_image_url ? 'center' : undefined,
   };

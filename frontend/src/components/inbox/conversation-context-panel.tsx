@@ -22,6 +22,14 @@ function isMeaningfulValue(value?: string | null) {
   return !['', 'unknown', 'sin clasificar', 'no definido', 'motivo'].includes(normalized);
 }
 
+function activeAgentLabel(agent?: InboxConversationDetail['activeAiAgent']) {
+  if (agent === 'sales') return 'Sales Agent';
+  if (agent === 'general') return 'General Agent';
+  if (agent === 'marketing') return 'Marketing Agent';
+  if (agent === 'operations') return 'Operations Agent';
+  return '';
+}
+
 export function ConversationContextPanel({
   conversation,
   relatedProducts,
@@ -99,6 +107,7 @@ export function ConversationContextPanel({
   );
   const qualificationStatus = conversation?.qualification?.['affiliate_status'];
   const qualificationCategory = conversation?.qualification?.['affiliate_category'];
+  const aiAgentLabel = activeAgentLabel(conversation?.activeAiAgent);
 
   if (!conversation) {
     return (
@@ -125,6 +134,12 @@ export function ConversationContextPanel({
             {conversation.owner === 'ia' ? <Bot size={13} className="text-brand-500" /> : <UserRound size={13} className="text-emerald-600" />}
             Responsable actual: {conversation.owner === 'ia' ? 'IA' : conversation.assignedAgent || 'Humano'}
           </p>
+          {conversation.owner === 'ia' && aiAgentLabel ? (
+            <p className="flex items-center gap-1.5">
+              <Sparkles size={13} className="text-violet-500" />
+              Agente IA activo: {aiAgentLabel}
+            </p>
+          ) : null}
           <p className="flex items-center gap-1.5"><Clock3 size={13} className="text-ink-400" /> Ultimo movimiento: {new Date(conversation.lastMessageAt).toLocaleString('es-CO')}</p>
         </div>
         <div className="mt-2.5 border-t border-[rgba(17,17,16,0.06)] pt-2.5">
@@ -291,6 +306,9 @@ export function ConversationContextPanel({
         <div className="mt-2.5 space-y-1.5 text-[12px] text-ink-600">
           {cleanIntent ? <p><span className="font-semibold text-ink-900">Intencion:</span> {cleanIntent}</p> : null}
           <p><span className="font-semibold text-ink-900">Canal:</span> {conversation.channelLabel}</p>
+          {conversation.owner === 'ia' && aiAgentLabel ? (
+            <p><span className="font-semibold text-ink-900">Agente IA:</span> {aiAgentLabel}</p>
+          ) : null}
           <p><span className="font-semibold text-ink-900">Historial:</span> {conversation.messages.length} mensajes y {conversation.timeline.length} eventos</p>
           {conversation.activeFlow ? (
             <p><span className="font-semibold text-ink-900">Flujo activo:</span> {conversation.activeFlow.label} · {conversation.activeFlow.step.replaceAll('_', ' ')}</p>

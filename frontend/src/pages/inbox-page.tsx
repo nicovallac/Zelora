@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ChevronLeft, Columns3, ListFilter, PanelsTopLeft, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
 import type {
@@ -97,6 +97,7 @@ function buildSummary(conversation: ConvListItem): InboxConversationSummary {
     apiStatus: conversation.estado as InboxConversationSummary['apiStatus'],
     commercialStatus: meta.commercialStatus,
     owner: meta.owner,
+    activeAiAgent: conversation.active_ai_agent || '',
     priority: meta.priority,
     followUp: meta.followUp,
     opportunity: meta.opportunity,
@@ -275,6 +276,8 @@ function inferRelatedKnowledge(
 export function InboxPage() {
   const { showError, showInfo, showSuccess } = useNotification();
   const { connected, lastMessage } = useWebSocket('/ws/inbox/', 'subprotocol');
+  const autoSummaryRequestedRef = useRef<Set<string>>(new Set());
+  const autoCopilotRequestedRef = useRef<Set<string>>(new Set());
   const [mobilePane, setMobilePane] = useState<MobilePane>('listado');
   const [listLoading, setListLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -415,10 +418,15 @@ export function InboxPage() {
 
   useEffect(() => {
     if (!selectedDetail) return;
-    if (!aiSummaryMap[selectedDetail.id]) {
+    if (!aiSummaryMap[selectedDetail.id] && !autoSummaryRequestedRef.current.has(selectedDetail.id)) {
+      autoSummaryRequestedRef.current.add(selectedDetail.id);
       void generateAISummary(selectedDetail.id, { silent: true });
     }
-    if (!copilotMap[selectedDetail.id] || copilotMap[selectedDetail.id].length === 0) {
+    if (
+      (!copilotMap[selectedDetail.id] || copilotMap[selectedDetail.id].length === 0) &&
+      !autoCopilotRequestedRef.current.has(selectedDetail.id)
+    ) {
+      autoCopilotRequestedRef.current.add(selectedDetail.id);
       void generateCopilotSuggestions(selectedDetail.id, { silent: true });
     }
   }, [selectedDetail, aiSummaryMap, copilotMap]);

@@ -8,11 +8,11 @@ interface CropModalProps {
   aspect: number;
   shape: 'rect' | 'round';
   title: string;
-  onApply: (croppedDataUrl: string) => void;
+  onApply: (croppedFile: File) => void;
   onCancel: () => void;
 }
 
-async function buildCroppedImage(src: string, pixelCrop: Area, shape: 'rect' | 'round'): Promise<string> {
+async function buildCroppedImage(src: string, pixelCrop: Area, shape: 'rect' | 'round'): Promise<Blob> {
   const image = new Image();
   image.src = src;
   await new Promise<void>((resolve, reject) => {
@@ -41,7 +41,13 @@ async function buildCroppedImage(src: string, pixelCrop: Area, shape: 'rect' | '
     pixelCrop.width, pixelCrop.height,
   );
 
-  return canvas.toDataURL('image/jpeg', 0.92);
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/jpeg', 0.92);
+  });
+  if (!blob) {
+    throw new Error('No se pudo generar la imagen recortada.');
+  }
+  return blob;
 }
 
 export function CropModal({ src, aspect, shape, title, onApply, onCancel }: CropModalProps) {
@@ -59,7 +65,8 @@ export function CropModal({ src, aspect, shape, title, onApply, onCancel }: Crop
     setApplying(true);
     try {
       const result = await buildCroppedImage(src, croppedAreaPixels, shape);
-      onApply(result);
+      const croppedFile = new File([result], `product-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      onApply(croppedFile);
     } finally {
       setApplying(false);
     }

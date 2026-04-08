@@ -11,6 +11,34 @@ function formatTime(timestamp: string) {
   return new Date(timestamp).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 }
 
+function activeAgentMeta(agent?: InboxConversationDetail['activeAiAgent']) {
+  if (agent === 'sales') {
+    return {
+      label: 'Sales Agent activo',
+      tone: 'bg-violet-100 text-violet-700',
+    };
+  }
+  if (agent === 'general') {
+    return {
+      label: 'General Agent activo',
+      tone: 'bg-sky-100 text-sky-700',
+    };
+  }
+  if (agent === 'marketing') {
+    return {
+      label: 'Marketing Agent activo',
+      tone: 'bg-amber-100 text-amber-700',
+    };
+  }
+  if (agent === 'operations') {
+    return {
+      label: 'Operations Agent activo',
+      tone: 'bg-emerald-100 text-emerald-700',
+    };
+  }
+  return null;
+}
+
 function roleMeta(role: string) {
   if (role === 'user') {
     return { label: 'Cliente', tone: 'bg-white/80 border border-[rgba(17,17,16,0.08)] text-ink-800', side: 'left' as const };
@@ -123,6 +151,8 @@ export function ConversationView({
   onExportJson: () => void;
   exportingJson: boolean;
 }) {
+  const aiAgentMeta = activeAgentMeta(conversation?.activeAiAgent);
+
   if (!conversation) {
     return (
       <Card className="flex h-full min-h-0 items-center justify-center border-dashed bg-[rgba(17,17,16,0.02)] p-6 text-center">
@@ -146,6 +176,11 @@ export function ConversationView({
               <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${conversation.owner === 'ia' ? 'bg-brand-100 text-brand-700' : 'bg-emerald-100 text-emerald-700'}`}>
                 {conversation.owner === 'ia' ? 'IA' : 'Humano'}
               </span>
+              {conversation.owner === 'ia' && aiAgentMeta ? (
+                <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${aiAgentMeta.tone}`}>
+                  {aiAgentMeta.label}
+                </span>
+              ) : null}
               {conversation.activeFlow?.status === 'active' ? (
                 <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700">
                   {conversation.activeFlow.label}: {conversation.activeFlow.step.replaceAll('_', ' ')}

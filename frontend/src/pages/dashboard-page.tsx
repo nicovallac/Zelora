@@ -9,14 +9,14 @@ import type {
   ConvListItem,
   KBArticleApiItem,
   KBDocumentApiItem,
+  MetricsOverview,
   OnboardingProfileApiItem,
   OrderApiItem,
   ProductApiItem,
+  SalesAgentMetricsApiItem,
   WebWidgetConnectionApiItem,
   WhatsAppConnectionApiItem,
 } from '../services/api';
-import { mockConversations } from '../data/mock';
-import { USE_MOCK_DATA } from '../lib/runtime';
 import { AIAgentsPanel } from '../components/dashboard/ai-agents-panel';
 import { AttentionRequired } from '../components/dashboard/attention-required';
 import { BusinessSnapshot } from '../components/dashboard/business-snapshot';
@@ -53,6 +53,8 @@ interface DashboardDataState {
   appChat: AppChatConnectionApiItem | null;
   webWidget: WebWidgetConnectionApiItem | null;
   whatsapp: WhatsAppConnectionApiItem | null;
+  overview: (MetricsOverview & Record<string, unknown>) | null;
+  salesMetrics: SalesAgentMetricsApiItem | null;
 }
 
 const EMPTY_STATE: DashboardDataState = {
@@ -65,19 +67,9 @@ const EMPTY_STATE: DashboardDataState = {
   appChat: null,
   webWidget: null,
   whatsapp: null,
+  overview: null,
+  salesMetrics: null,
 };
-
-function normalizeMockConversations(): DashboardConversation[] {
-  return mockConversations.map((conversation) => ({
-    id: conversation.id,
-    status: conversation.status,
-    sentiment: conversation.sentiment,
-    intent: conversation.intent,
-    channel: conversation.channel,
-    createdAt: conversation.createdAt,
-    lastMessageAt: conversation.lastMessageAt,
-  }));
-}
 
 function formatResponseTime(conversations: DashboardConversation[]) {
   if (conversations.length === 0) return 'Sin datos';
@@ -115,75 +107,6 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
 
-    if (USE_MOCK_DATA) {
-      setData({
-        ...EMPTY_STATE,
-        conversations: normalizeMockConversations(),
-        onboarding: {
-          organization_name: 'Zelora Demo',
-          website: '',
-          timezone: 'America/Bogota',
-          tax_id: '',
-          contact_email: '',
-          contact_phone: '',
-          payment_methods: [],
-          payment_settings: {},
-          what_you_sell: 'Vendemos productos por ecommerce en LatAm',
-          who_you_sell_to: 'Personas que compran online y esperan respuesta rapida',
-          sales_agent_name: 'Sales Agent',
-          sales_agent_profile: {
-            what_you_sell: 'Vendemos productos por ecommerce en LatAm',
-            who_you_sell_to: 'Personas que compran online y esperan respuesta rapida',
-            brand_profile: {},
-            sales_playbook: {},
-            buyer_model: {},
-            commerce_rules: {},
-          },
-          quick_knowledge_text: '',
-          quick_knowledge_links: [],
-          quick_knowledge_files: [],
-          activation_tasks: {
-            knowledge_status: 'in_progress',
-            channels_status: 'completed',
-            agent_test_status: 'pending',
-            agent_tested_at: null,
-          },
-          initial_onboarding_completed: true,
-          brand_profile: {},
-          sales_playbook: {},
-          buyer_model: {},
-          commerce_rules: {},
-          locale_settings: {
-            language: 'es',
-            date_format: 'DD/MM/YYYY',
-            default_response_language: true,
-            session_timeout_minutes: 480,
-          },
-          notification_settings: { items: [] },
-          ai_preferences: {
-            provider: 'gpt4',
-            copilot_model: 'gpt-4o',
-            summary_model: 'gpt-4.1-nano',
-            temperature: 0.55,
-            max_tokens: 350,
-            confidence_threshold: 75,
-            copilot_suggestions: 3,
-            sentiment_analysis: true,
-            auto_summary: true,
-            qa_scoring: true,
-          },
-          optimization_profile: { status: 'not_started', last_updated_at: null },
-          onboarding_status: 'completed',
-          completed_step: 3,
-        },
-        products: [],
-        orders: [],
-      });
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
-
     try {
       const [
         onboardingResult,
@@ -195,6 +118,8 @@ export default function DashboardPage() {
         appChatResult,
         webWidgetResult,
         whatsappResult,
+        overviewResult,
+        salesMetricsResult,
       ] = await Promise.allSettled([
         api.getOnboardingProfile(),
         api.getConversations(),
@@ -205,6 +130,8 @@ export default function DashboardPage() {
         api.getAppChatConnection(),
         api.getWebWidgetConnection(),
         api.getWhatsAppConnection(),
+        api.getMetricsOverview(),
+        api.getSalesAgentMetrics(),
       ]);
 
       const hadRejected = [
@@ -217,6 +144,8 @@ export default function DashboardPage() {
         appChatResult,
         webWidgetResult,
         whatsappResult,
+        overviewResult,
+        salesMetricsResult,
       ].some((item) => item.status === 'rejected');
 
       setData({
@@ -240,6 +169,8 @@ export default function DashboardPage() {
         appChat: appChatResult.status === 'fulfilled' ? appChatResult.value : null,
         webWidget: webWidgetResult.status === 'fulfilled' ? webWidgetResult.value : null,
         whatsapp: whatsappResult.status === 'fulfilled' ? whatsappResult.value : null,
+        overview: overviewResult.status === 'fulfilled' ? overviewResult.value : null,
+        salesMetrics: salesMetricsResult.status === 'fulfilled' ? salesMetricsResult.value : null,
       });
       if (hadRejected) {
         setError('Algunos datos no pudieron cargarse y el panel puede verse incompleto.');
@@ -277,6 +208,13 @@ export default function DashboardPage() {
       onboarding?.activation_tasks?.channels_status === 'completed',
       onboarding?.activation_tasks?.agent_test_status === 'completed',
     ].filter(Boolean).length;
+    const overviewTotal = Number(data.overview?.total_conversaciones ?? conversations.length);
+    const overviewEscalated = Number(data.overview?.escalamiento_pct ?? 0);
+    const salesMetrics = data.salesMetrics;
+    const avgResponseTime = data.overview?.tiempo_promedio_seg
+      ? `${Math.max(1, Math.round(Number(data.overview.tiempo_promedio_seg) / 60))} min`
+      : formatResponseTime(conversations);
+    const opportunitiesValue = salesMetrics?.qualified_leads ?? opportunities;
 
     const maturity: DashboardMaturity =
       !onboarding?.initial_onboarding_completed || completedCoreTasks <= 1
@@ -293,6 +231,12 @@ export default function DashboardPage() {
         tone: activeConversations > 0 ? 'brand' : 'default',
       },
       {
+        label: 'Conversaciones totales',
+        value: String(overviewTotal),
+        hint: overviewTotal > 0 ? 'Volumen acumulado del periodo actual' : 'Sin volumen todavia',
+        tone: overviewTotal > 0 ? 'brand' : 'default',
+      },
+      {
         label: 'Pendientes por responder',
         value: String(pendingConversations),
         hint: pendingConversations > 0 ? 'Conviene revisarlas primero' : 'Todo al dia por ahora',
@@ -305,16 +249,16 @@ export default function DashboardPage() {
         tone: activeChannels > 0 ? 'success' : 'warning',
       },
       {
-        label: 'Productos cargados',
-        value: String(productsLoaded),
-        hint: productsLoaded > 0 ? 'Tu catalogo ya ayuda a vender mejor' : 'Tu catalogo aun no esta cargado',
-        tone: productsLoaded > 0 ? 'brand' : 'default',
-      },
-      {
         label: 'Knowledge Base',
         value: String(knowledgeCount),
         hint: knowledgeCount > 0 ? 'Fuentes cargadas para responder mejor' : 'Sin fuentes de conocimiento aun',
         tone: knowledgeCount > 0 ? 'success' : 'warning',
+      },
+      {
+        label: 'Productos cargados',
+        value: String(productsLoaded),
+        hint: productsLoaded > 0 ? 'Tu catalogo ya ayuda a vender mejor' : 'Tu catalogo aun no esta cargado',
+        tone: productsLoaded > 0 ? 'brand' : 'default',
       },
     ];
 
@@ -378,8 +322,8 @@ export default function DashboardPage() {
       },
       {
         label: 'Tiempo promedio de respuesta',
-        value: formatResponseTime(conversations),
-        hint: 'Velocidad actual de tu equipo o asistente',
+        value: avgResponseTime,
+        hint: data.overview?.tiempo_promedio_seg ? 'Medido desde analytics' : 'Estimado segun actividad reciente',
       },
       {
         label: 'Conversaciones resueltas',
@@ -388,8 +332,8 @@ export default function DashboardPage() {
       },
       {
         label: 'Oportunidades detectadas',
-        value: String(opportunities),
-        hint: 'Conversaciones con potencial de venta o avance',
+        value: String(opportunitiesValue),
+        hint: salesMetrics?.qualified_leads ? 'Lead scoring del Sales Agent' : 'Conversaciones con potencial de venta o avance',
       },
       {
         label: 'Pedidos por conversacion',
@@ -456,8 +400,10 @@ export default function DashboardPage() {
       activeChannels,
       productsLoaded,
       knowledgeCount,
-      opportunities,
+      opportunities: opportunitiesValue,
       resolvedConversations,
+      avgResponseTime,
+      escalatedPct: overviewEscalated,
       hasAnyData:
         conversations.length > 0 ||
         activeChannels > 0 ||
@@ -520,10 +466,10 @@ export default function DashboardPage() {
         <BusinessSnapshot items={derived.snapshotItems} />
 
         <AIAgentsPanel
-          conversationsHandled={derived.activeConversations}
+          conversationsHandled={data.salesMetrics?.conversations ?? derived.activeConversations}
           opportunitiesDetected={derived.opportunities}
-          avgResponseTime={formatResponseTime(data.conversations)}
-          conversationsResolved={derived.resolvedConversations}
+          avgResponseTime={derived.avgResponseTime}
+          conversationsResolved={data.salesMetrics?.executions ?? derived.resolvedConversations}
         />
 
         <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">

@@ -142,6 +142,7 @@ export interface ConvListItem {
   contact_tipo_afiliado?: string;
   agent_nombre?: string;
   owner?: 'ia' | 'humano';
+  active_ai_agent?: 'general' | 'sales' | 'marketing' | 'operations' | '';
   commercial_status?: 'nuevo' | 'en_conversacion' | 'interesado' | 'esperando_respuesta' | 'escalado' | 'cerrado' | 'venta_lograda' | 'perdido';
   priority?: 'alta' | 'media' | 'baja';
   follow_up?: boolean;
@@ -247,7 +248,7 @@ export interface UserAdmin {
   telefono?: string;
   email?: string;
   tipo_afiliado: string;
-  metadata?: Record<string, string>;
+  metadata?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -261,6 +262,23 @@ interface AgentApiItem {
   created_at: string;
 }
 
+export interface MyAgentProfileApiItem {
+  id: string;
+  email: string;
+  nombre: string;
+  apellido?: string;
+  telefono?: string;
+  avatar?: string | null;
+  avatar_url?: string | null;
+  rol: string;
+  is_active: boolean;
+  is_available: boolean;
+  max_concurrent_chats?: number;
+  last_seen?: string | null;
+  full_name?: string;
+  created_at: string;
+}
+
 interface ContactApiListItem {
   id: string;
   full_name: string;
@@ -268,7 +286,7 @@ interface ContactApiListItem {
   email?: string;
   tipo: string;
   canal: string;
-  metadata?: Record<string, string>;
+  metadata?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -280,7 +298,7 @@ interface ContactApiDetailItem {
   email?: string;
   cedula?: string;
   tipo_afiliado?: string;
-  metadata?: Record<string, string>;
+  metadata?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -291,7 +309,7 @@ export interface CreateUserPayload {
   telefono?: string;
   email?: string;
   tipo_afiliado: string;
-  metadata?: Record<string, string>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface CreateOrderPayload {
@@ -312,7 +330,7 @@ export interface ReserveInventoryPayload {
   items: { sku: string; qty: number }[];
 }
 
-export type KBArticlePurpose = 'faq' | 'objection' | 'closing' | 'brand_voice' | 'policy' | 'product_context';
+export type KBArticlePurpose = 'faq' | 'business' | 'sales_scripts' | 'policy';
 
 export interface KBArticleApiItem {
   id: string;
@@ -325,6 +343,7 @@ export interface KBArticleApiItem {
   visits: number;
   created_at: string;
   updated_at: string;
+  redirect_warning?: string | null;
 }
 
 export interface KBArticlePayload {
@@ -422,6 +441,23 @@ export interface ProductPayload {
   status: 'active' | 'draft' | 'archived';
   is_active?: boolean;
   variants: ProductVariantPayload[];
+}
+
+export interface ProductImageUploadResult {
+  url: string;
+  path: string;
+  name: string;
+  size: number;
+  content_type?: string;
+}
+
+export interface ChannelMediaUploadResult {
+  url: string;
+  path: string;
+  name: string;
+  size: number;
+  content_type?: string;
+  kind: 'logo' | 'hero';
 }
 
 export interface OrderApiItem {
@@ -649,7 +685,6 @@ export interface WebWidgetPublicConfig {
 export interface WebWidgetConnectionPayload {
   is_active?: boolean;
   widget_name?: string;
-  greeting_message?: string;
   brand_color?: string;
   position?: string;
   allowed_domains?: string[];
@@ -720,7 +755,6 @@ export interface AppChatConnectionApiItem {
 export interface AppChatConnectionPayload {
   is_active?: boolean;
   app_name?: string;
-  welcome_message?: string;
   primary_color?: string;
   accent_color?: string;
   page_background_color?: string;
@@ -990,11 +1024,21 @@ export interface OnboardingProfileApiItem {
   };
   what_you_sell: string;
   who_you_sell_to: string;
+  general_agent_name: string;
+  general_agent_profile: {
+    agent_persona?: string;
+    mission_statement?: string;
+    scope_notes?: string;
+    allowed_topics?: string[];
+    blocked_topics?: string[];
+    handoff_to_sales_when?: string[];
+    handoff_to_human_when?: string[];
+    response_language?: 'auto' | 'es' | 'en';
+    greeting_message?: string;
+  };
   sales_agent_name: string;
   sales_agent_profile: {
     agent_persona?: string;
-    what_you_sell?: string;
-    who_you_sell_to?: string;
     mission_statement?: string;
     industry?: string;
     country?: string;
@@ -1014,6 +1058,7 @@ export interface OnboardingProfileApiItem {
       urgency_style?: string;
       recommended_phrases?: string[];
       avoid_phrases?: string[];
+      customer_style_notes?: string;
     };
     sales_playbook?: {
       opening_style?: string;
@@ -1064,6 +1109,7 @@ export interface OnboardingProfileApiItem {
     urgency_style?: string;
     recommended_phrases?: string[];
     avoid_phrases?: string[];
+    customer_style_notes?: string;
   };
   sales_playbook: {
     opening_style?: string;
@@ -1082,6 +1128,8 @@ export interface OnboardingProfileApiItem {
     bulk_buyer_signals?: string[];
   };
   commerce_rules: {
+    payment_methods?: string[];
+    shipping_policy?: string;
     discount_policy?: string;
     negotiation_policy?: string;
     inventory_promise_rule?: string;
@@ -1095,6 +1143,11 @@ export interface OnboardingProfileApiItem {
     date_format?: string;
     default_response_language?: boolean;
     session_timeout_minutes?: number;
+    business_hours?: Array<{ dia: string; label: string; activo: boolean; inicio: string; fin: string }>;
+    sla_minutes?: number;
+    auto_escalate_minutes?: number;
+    off_hours_message?: string;
+    sla_threshold?: number;
   };
   notification_settings: {
     items?: Array<{
@@ -1117,6 +1170,13 @@ export interface OnboardingProfileApiItem {
     sentiment_analysis?: boolean;
     auto_summary?: boolean;
     qa_scoring?: boolean;
+    general_agent?: {
+      enabled?: boolean;
+      trial_mode?: boolean;
+      model_name?: string;
+      handoff_mode?: 'temprano' | 'balanceado' | 'estricto';
+      max_response_length?: 'brief' | 'standard' | 'detailed';
+    };
     sales_agent?: {
       enabled?: boolean;
       autonomy_level?: 'asistido' | 'semi_autonomo' | 'autonomo';
@@ -1131,11 +1191,30 @@ export interface OnboardingProfileApiItem {
     status?: string;
     last_updated_at?: string | null;
   };
+  security_settings?: {
+    mfa_enabled?: boolean;
+    min_password_length?: number;
+    require_special_chars?: boolean;
+    require_numbers?: boolean;
+    password_expiry_days?: number;
+    ip_allowlist?: Array<{ id: string; cidr: string; activo: boolean }>;
+  };
   onboarding_status: string;
   completed_step: number;
 }
 
 export interface OnboardingProfilePayload extends Partial<OnboardingProfileApiItem> {}
+
+export interface SecurityAuditLogItem {
+  id: string;
+  actor_email: string;
+  event_type: string;
+  event_description: string;
+  ip_address: string | null;
+  user_agent: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
 
 export interface SalesAgentMetricsApiItem {
   period_days: number;
@@ -1192,7 +1271,7 @@ export interface LearningCandidateApiItem {
 
 export interface DocumentExtractionCandidateApiItem {
   id: string;
-  kind: 'service' | 'pricing_rule' | 'policy' | 'flow_hint';
+  kind: 'service' | 'pricing_rule' | 'policy' | 'flow_hint' | 'ai_summary' | 'ai_qa';
   status: 'pending' | 'approved' | 'rejected';
   title: string;
   body: string;
@@ -1240,6 +1319,23 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
+  getMyAgentProfile: () => fetchApi<MyAgentProfileApiItem>('/api/auth/agents/me/'),
+  updateMyAgentProfile: (data: { nombre?: string; apellido?: string; telefono?: string }) =>
+    fetchApi<MyAgentProfileApiItem>('/api/auth/agents/me/', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  changeMyPassword: (data: { old_password: string; new_password: string }) =>
+    fetchApi<{ message: string }>('/api/auth/agents/change_password/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  // Security audit log
+  getSecurityAuditLog: () =>
+    fetchList<SecurityAuditLogItem>('/api/auth/audit-log/'),
+  downloadSecurityAuditLogCsv: () =>
+    downloadFile('/api/auth/audit-log/export_csv/', 'security_audit_log.csv'),
 
   // Conversations
   getConversations: (params?: { canal?: string; estado?: string }) => {
@@ -1248,6 +1344,8 @@ export const api = {
       : '';
     return fetchList<ConvListItem>(`/api/conversations/${q}`);
   },
+  getConversationStats: () =>
+    fetchApi<{ this_month: number; total: number }>('/api/conversations/stats/'),
   getConversation: (id: string) => fetchApi<ConvDetail>(`/api/conversations/${id}/`),
   sendMessage: (id: string, content: string, role = 'agent') =>
     fetchApi<MessageItem>(`/api/conversations/${id}/messages/`, {
@@ -1306,9 +1404,9 @@ export const api = {
     }),
 
   // Metrics
-  getMetricsOverview: () => fetchApi<MetricsOverview>('/metrics/overview'),
-  getMetricsChannels: () => fetchApi<ChannelMetric[]>('/metrics/channels'),
-  getMetricsIntents: () => fetchApi<IntentMetric[]>('/metrics/intents'),
+  getMetricsOverview: (days = 30) => fetchApi<MetricsOverview & Record<string, unknown>>(`/api/analytics/overview/?days=${days}`),
+  getMetricsChannels: (days = 30) => fetchApi<{ channels: ChannelMetric[]; period_days: number }>(`/api/analytics/channels/?days=${days}`),
+  getMetricsIntents: (days = 30) => fetchApi<IntentMetric[]>(`/api/analytics/intents/?days=${days}`),
 
   // Pricing
   getPricing: () => fetchApi<PricingItem[]>('/pricing'),
@@ -1434,6 +1532,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  uploadProductImage: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetchApi<ProductImageUploadResult>('/api/ecommerce/products/upload-image/', {
+      method: 'POST',
+      body: formData,
+    });
+  },
   updateProduct: (id: string, data: ProductPayload) =>
     fetchApi<ProductApiItem>(`/api/ecommerce/products/${id}/`, {
       method: 'PUT',
@@ -1472,7 +1578,12 @@ export const api = {
     }),
 
   // Public web chat
-  sendWebChatMessage: (data: WebChatInboundPayload) =>
+  getWebChatSessionToken: (orgSlug: string, sessionId: string) =>
+    fetchApi<{ session_token: string; organization_slug: string; session_id: string }>(
+      '/api/channels/webchat/session/',
+      { method: 'POST', body: JSON.stringify({ organization_slug: orgSlug, session_id: sessionId }) }
+    ),
+  sendWebChatMessage: (data: WebChatInboundPayload & { session_token?: string }) =>
     fetchApi<WebChatInboundResponse>('/api/channels/webchat/messages/', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -1553,6 +1664,15 @@ export const api = {
     fetchCached(`public-appchat:${orgSlug}`, () =>
       fetchApi<AppChatPublicConfig>(`/api/channels/appchat/public/${orgSlug}/`),
     ),
+  uploadAppChatMedia: (file: File, kind: 'logo' | 'hero') => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('kind', kind);
+    return fetchApi<ChannelMediaUploadResult>('/api/channels/appchat/upload-media/', {
+      method: 'POST',
+      body: formData,
+    });
+  },
   updateAppChatConnection: (data: AppChatConnectionPayload) =>
     fetchApi<AppChatConnectionApiItem>('/api/channels/appchat/connection/', {
       method: 'PATCH',
@@ -1631,8 +1751,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ids }),
     }),
-  getDocumentExtractionCandidates: (params?: { kind?: string; status?: string }) => {
-    const q = params ? `?${new URLSearchParams(params as Record<string, string>).toString()}` : '';
+  getDocumentExtractionCandidates: (params?: { kind?: string; status?: string; source_document?: string }) => {
+    const filtered = params ? Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '')) : {};
+    const q = Object.keys(filtered).length ? `?${new URLSearchParams(filtered as Record<string, string>).toString()}` : '';
     return fetchApi<DocumentExtractionCandidateApiItem[]>(`/api/analytics/document-extraction-candidates/${q}`);
   },
   generateDocumentExtractionCandidates: (documentId?: string) =>
@@ -1678,6 +1799,15 @@ export const api = {
     fetchApi<void>(`/api/flows/${id}/`, {
       method: 'DELETE',
     }),
+  getFlowIntents: () =>
+    fetchList<{ id: string | null; value: string; label: string; is_custom: boolean; keywords?: string[] }>('/api/flows/intents/'),
+  createCustomIntent: (data: { name: string; label: string; keywords: string[] }) =>
+    fetchApi<{ id: string; value: string; label: string; is_custom: boolean; keywords: string[] }>('/api/flows/intents/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  deleteCustomIntent: (id: string) =>
+    fetchApi<void>(`/api/flows/intents/${id}/`, { method: 'DELETE' }),
 
   // Ecommerce
   createOrder: (data: CreateOrderPayload) =>

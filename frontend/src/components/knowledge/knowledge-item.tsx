@@ -3,21 +3,30 @@ import type { KnowledgeListItem } from './types';
 
 function kindBadge(item: KnowledgeListItem) {
   if (item.kind === 'archivo') return { Icon: Paperclip, label: 'Doc', tone: 'bg-amber-50 text-amber-700 border-amber-200/60' };
-  if (item.kind === 'link')    return { Icon: Link2,     label: 'Link', tone: 'bg-sky-50 text-sky-700 border-sky-200/60' };
+  if (item.kind === 'link') return { Icon: Link2, label: 'Link', tone: 'bg-sky-50 text-sky-700 border-sky-200/60' };
   return { Icon: FileText, label: 'Texto', tone: 'bg-brand-50 text-brand-700 border-brand-200/60' };
 }
 
-function categoryBadge(item: KnowledgeListItem): { label: string; tone: string; isAi: boolean } | null {
-  const cat = (item.rawArticle?.category || '').toLowerCase();
-  if (cat === 'ai_aprendido') return { label: 'IA', tone: 'bg-violet-50 text-violet-700 border-violet-200/60', isAi: true };
-  if (cat === 'objeciones detectadas') return { label: 'Objeción', tone: 'bg-amber-50 text-amber-700 border-amber-200/60', isAi: false };
-  if (cat === 'aprendizaje automatico') return { label: 'Auto', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200/60', isAi: false };
-  return null;
+function sourceBadge(item: KnowledgeListItem): { label: string; tone: string; isAi: boolean } | null {
+  if (!item.rawArticle) return null;
+  const tags: string[] = item.rawArticle.tags || [];
+  const cat = (item.rawArticle.category || '').toLowerCase();
+
+  // Came from AI conversation learning
+  if (cat === 'ai_aprendido' || cat === 'aprendizaje automatico') {
+    return { label: 'IA aprendido', tone: 'bg-violet-50 text-violet-700 border-violet-200/60', isAi: true };
+  }
+  // Came from document analysis approval
+  if (tags.includes('document_extraction')) {
+    return { label: 'Extraído', tone: 'bg-amber-50 text-amber-700 border-amber-200/60', isAi: true };
+  }
+  // Created manually by the user
+  return { label: 'Manual', tone: 'bg-slate-50 text-slate-600 border-slate-200/60', isAi: false };
 }
 
 function processingColor(status?: KnowledgeListItem['processingStatus']) {
-  if (status === 'ready')      return 'bg-emerald-50 text-emerald-700';
-  if (status === 'failed')     return 'bg-red-50 text-red-600';
+  if (status === 'ready') return 'bg-emerald-50 text-emerald-700';
+  if (status === 'failed') return 'bg-red-50 text-red-600';
   if (status === 'processing') return 'bg-sky-50 text-sky-600';
   return 'bg-ink-100/70 text-ink-500';
 }
@@ -39,7 +48,7 @@ export function KnowledgeItem({
   onSelect: () => void;
 }) {
   const kind = kindBadge(item);
-  const cat = categoryBadge(item);
+  const cat = sourceBadge(item);
   const KindIcon = kind.Icon;
 
   return (
@@ -52,12 +61,10 @@ export function KnowledgeItem({
       }`}
     >
       <div className="flex items-start gap-2.5">
-        {/* Kind icon */}
         <span className={`mt-0.5 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border ${kind.tone}`}>
           <KindIcon size={11} />
         </span>
 
-        {/* Content */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             {cat && (

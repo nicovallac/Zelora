@@ -29,6 +29,32 @@ const TIPO_CONFIG: Record<string, { label: string; className: string }> = {
   independiente: { label: 'Independiente', className: 'bg-violet-100 text-violet-800' },
 };
 
+function stringifyMetadataValue(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => stringifyMetadataValue(item))
+      .filter(Boolean)
+      .join(', ');
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function normalizeMetadataRecord(metadata: Record<string, unknown> | undefined): Record<string, string> {
+  if (!metadata || typeof metadata !== 'object') return {};
+  return Object.fromEntries(
+    Object.entries(metadata)
+      .map(([key, value]) => [key, stringifyMetadataValue(value)])
+      .filter(([key, value]) => Boolean(key) && Boolean(value))
+  );
+}
+
 function getInitials(nombre: string, apellido: string) {
   return `${nombre[0] ?? ''}${apellido[0] ?? ''}`.toUpperCase();
 }
@@ -78,6 +104,7 @@ function AfiliadoModal({ open, onClose, onSuccess, editUser }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     if (editUser) {
+      const normalizedMetadata = normalizeMetadataRecord(editUser.metadata);
       setForm({
         nombre: editUser.nombre,
         apellido: editUser.apellido,
@@ -85,7 +112,7 @@ function AfiliadoModal({ open, onClose, onSuccess, editUser }: ModalProps) {
         telefono: editUser.telefono ?? '',
         email: editUser.email ?? '',
         tipo_afiliado: editUser.tipo_afiliado,
-        metadata: Object.entries(editUser.metadata || {}).map(([key, value]) => ({ key, value })),
+        metadata: Object.entries(normalizedMetadata).map(([key, value]) => ({ key, value })),
       });
     } else {
       setForm(EMPTY_FORM);
@@ -404,6 +431,7 @@ export function AfiliadosPage() {
                     </tr>
                   ))
                 ) : users.map((user) => {
+                  const normalizedMetadata = normalizeMetadataRecord(user.metadata);
                   const typeConfig = TIPO_CONFIG[user.tipo_afiliado] ?? {
                     label: user.tipo_afiliado,
                     className: 'bg-[rgba(17,17,16,0.06)] text-ink-700',
@@ -428,9 +456,9 @@ export function AfiliadosPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        {Object.keys(user.metadata || {}).length > 0 ? (
+                        {Object.keys(normalizedMetadata).length > 0 ? (
                           <div className="flex max-w-[240px] flex-wrap gap-1">
-                            {Object.entries(user.metadata || {}).slice(0, 3).map(([key, value]) => (
+                            {Object.entries(normalizedMetadata).slice(0, 3).map(([key, value]) => (
                               <span key={key} className="rounded-full bg-[rgba(17,17,16,0.06)] px-2 py-0.5 text-[10px] font-semibold text-ink-600">
                                 {key}: {value}
                               </span>

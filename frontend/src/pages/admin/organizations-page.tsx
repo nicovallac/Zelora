@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   Building2,
   Pencil,
@@ -18,12 +17,21 @@ import {
 } from 'lucide-react';
 import { useNotification } from '../../contexts/NotificationContext';
 import { api } from '../../services/api';
-import type { OnboardingProfileApiItem, OnboardingProfilePayload } from '../../services/api';
+import type { OnboardingProfileApiItem, OnboardingProfilePayload, SecurityAuditLogItem } from '../../services/api';
 import { PageHeader } from '../../components/ui/page-header';
 
-const ORGANIZATION_AUDIT_LOG: Array<{ id: string; tipo: string; evento: string; usuario: string; ip: string; timestamp: string }> = [];
+const AUDIT_EVENT_COLORS: Record<string, string> = {
+  login_success: 'bg-emerald-100 text-emerald-700',
+  login_failed: 'bg-red-100 text-red-700',
+  login_blocked_ip: 'bg-red-100 text-red-700',
+  password_changed: 'bg-blue-100 text-blue-700',
+  security_settings_changed: 'bg-violet-100 text-violet-700',
+  ip_allowlist_changed: 'bg-violet-100 text-violet-700',
+  agent_created: 'bg-orange-100 text-orange-700',
+  agent_deleted: 'bg-orange-100 text-orange-700',
+};
 
-type OrgTab = 'organizacion' | 'plataforma' | 'horarios' | 'canales' | 'seguridad';
+type OrgTab = 'organizacion' | 'plataforma' | 'horarios' | 'seguridad';
 
 interface EditableField {
   nombre: string;
@@ -55,6 +63,8 @@ interface NotificationSetting {
   browser: boolean;
   enabled: boolean;
 }
+
+type PaymentDetailTab = 'transferencia bancaria' | 'efectivo';
 
 const PLAN_BADGE: Record<string, string> = {
   enterprise: 'bg-purple-100 text-purple-700 border border-purple-200',
@@ -102,12 +112,6 @@ const defaultBusinessDays: BusinessDay[] = [
   { dia: 'dom', label: 'Domingo', activo: false, inicio: '08:00', fin: '18:00' },
 ];
 
-const EVENT_COLORS: Record<string, string> = {
-  auth: 'bg-emerald-100 text-emerald-700',
-  action: 'bg-blue-100 text-blue-700',
-  admin: 'bg-violet-100 text-violet-700',
-  campaign: 'bg-orange-100 text-orange-700',
-};
 
 export function OrganizationsPage() {
   const { showSuccess, showInfo, showError } = useNotification();
@@ -115,6 +119,10 @@ export function OrganizationsPage() {
   const [onboardingProfile, setOnboardingProfile] = useState<OnboardingProfileApiItem | null>(null);
   const [loadingOrganization, setLoadingOrganization] = useState(true);
   const [savingOrganization, setSavingOrganization] = useState(false);
+  const [paymentDetailTab, setPaymentDetailTab] = useState<PaymentDetailTab>('transferencia bancaria');
+  const [orgStats, setOrgStats] = useState({ agents: '—', articles: '—', campaigns: '—', convThisMonth: '—' });
+  const [auditLog, setAuditLog] = useState<SecurityAuditLogItem[]>([]);
+  const [loadingAuditLog, setLoadingAuditLog] = useState(false);
 
   // Tab 1 — Organización
   const [editingField, setEditingField] = useState<keyof EditableField | null>(null);
@@ -133,25 +141,53 @@ export function OrganizationsPage() {
     async function loadOrganizationContext() {
       setLoadingOrganization(true);
       try {
-        const profile = await api.getOnboardingProfile();
+        const [profile, agentsRes, articlesRes, campaignsRes, convStatsRes] = await Promise.allSettled([
+          api.getOnboardingProfile(),
+          api.getAgents(),
+          api.getKnowledgeBaseArticles(),
+          api.getCampaigns(),
+          api.getConversationStats(),
+        ]);
         if (cancelled) return;
-        setOnboardingProfile(profile);
-        setFields((current) => ({
-          ...current,
-          nombre: profile.organization_name || current.nombre,
-          nit: profile.tax_id || current.nit,
-          email: profile.contact_email || current.email,
-          telefono: profile.contact_phone || current.telefono,
-          sitioWeb: profile.website || current.sitioWeb,
-        }));
-      } catch (error) {
-        if (!cancelled) {
-          showError('Organizacion', error instanceof Error ? error.message : 'No se pudo cargar la informacion de onboarding.');
+
+        if (profile.status === 'fulfilled') {
+          const p = profile.value;
+          setOnboardingProfile(p);
+          setFields((current) => ({
+            ...current,
+            nombre: p.organization_name || current.nombre,
+            nit: p.tax_id || current.nit,
+            email: p.contact_email || current.email,
+            telefono: p.contact_phone || current.telefono,
+            sitioWeb: p.website || current.sitioWeb,
+          }));
+          // Init Horarios & SLA from locale_settings
+          const ls = p.locale_settings || {};
+          if (ls.business_hours?.length) setBusinessDays(ls.business_hours);
+          if (ls.sla_minutes) setSlaMinutos(ls.sla_minutes);
+          if (ls.auto_escalate_minutes) setAutoEscalarMinutos(ls.auto_escalate_minutes);
+          if (ls.off_hours_message) setMensajeFueraHorario(ls.off_hours_message);
+          if (ls.sla_threshold) setSlaThreshold(ls.sla_threshold);
+          // Init Seguridad from security_settings
+          const ss = p.security_settings || {};
+          if (ss.mfa_enabled !== undefined) setMfaEnabled(ss.mfa_enabled);
+          if (ss.min_password_length) setMinPasswordLength(ss.min_password_length);
+          if (ss.require_special_chars !== undefined) setRequireSpecialChars(ss.require_special_chars);
+          if (ss.require_numbers !== undefined) setRequireNumbers(ss.require_numbers);
+          if (ss.password_expiry_days) setPasswordExpiryDays(ss.password_expiry_days);
+          if (ss.ip_allowlist?.length) setIpList(ss.ip_allowlist);
+        } else {
+          showError('Organizacion', profile.reason instanceof Error ? profile.reason.message : 'No se pudo cargar la informacion de onboarding.');
         }
+
+        setOrgStats({
+          agents: agentsRes.status === 'fulfilled' ? String(agentsRes.value.length) : '—',
+          articles: articlesRes.status === 'fulfilled' ? String(articlesRes.value.length) : '—',
+          campaigns: campaignsRes.status === 'fulfilled' ? String(campaignsRes.value.length) : '—',
+          convThisMonth: convStatsRes.status === 'fulfilled' ? convStatsRes.value.this_month.toLocaleString('es-CO') : '—',
+        });
       } finally {
-        if (!cancelled) {
-          setLoadingOrganization(false);
-        }
+        if (!cancelled) setLoadingOrganization(false);
       }
     }
 
@@ -215,10 +251,7 @@ export function OrganizationsPage() {
     setBusinessDays((prev) => prev.map((d) => d.dia === dia ? { ...d, [field]: val } : d));
   }
 
-  // Tab 3 — Canales
-
-  // Tab 4 — Seguridad
-  const [showAddChannel, setShowAddChannel] = useState(false);
+  // Tab: Seguridad
   const [mfaEnabled, setMfaEnabled] = useState(true);
   const [minPasswordLength, setMinPasswordLength] = useState(12);
   const [requireSpecialChars, setRequireSpecialChars] = useState(true);
@@ -321,6 +354,69 @@ export function OrganizationsPage() {
     }
   }
 
+  async function saveHorarios() {
+    setSavingOrganization(true);
+    try {
+      const saved = await api.updateOnboardingProfile({
+        locale_settings: {
+          ...(onboardingProfile?.locale_settings || {}),
+          business_hours: businessDays,
+          sla_minutes: slaMinutos,
+          auto_escalate_minutes: autoEscalarMinutos,
+          off_hours_message: mensajeFueraHorario,
+          sla_threshold: slaThreshold,
+        },
+      });
+      setOnboardingProfile(saved);
+      showSuccess('Organizacion', 'Horarios y SLA guardados.');
+    } catch (err) {
+      showError('Organizacion', err instanceof Error ? err.message : 'No se pudo guardar los horarios.');
+    } finally {
+      setSavingOrganization(false);
+    }
+  }
+
+  async function saveSeguridad() {
+    setSavingOrganization(true);
+    try {
+      const saved = await api.updateOnboardingProfile({
+        security_settings: {
+          mfa_enabled: mfaEnabled,
+          min_password_length: minPasswordLength,
+          require_special_chars: requireSpecialChars,
+          require_numbers: requireNumbers,
+          password_expiry_days: passwordExpiryDays,
+          ip_allowlist: ipList,
+        },
+      });
+      setOnboardingProfile(saved);
+      showSuccess('Organizacion', 'Configuracion de seguridad guardada.');
+    } catch (err) {
+      showError('Organizacion', err instanceof Error ? err.message : 'No se pudo guardar la configuracion de seguridad.');
+    } finally {
+      setSavingOrganization(false);
+    }
+  }
+
+  async function loadAuditLog() {
+    setLoadingAuditLog(true);
+    try {
+      const logs = await api.getSecurityAuditLog();
+      setAuditLog(logs);
+    } catch {
+      // non-fatal — audit log panel will stay empty
+    } finally {
+      setLoadingAuditLog(false);
+    }
+  }
+
+  function switchTab(tab: OrgTab) {
+    setActiveTab(tab);
+    if (tab === 'seguridad' && auditLog.length === 0) {
+      void loadAuditLog();
+    }
+  }
+
   const localeSettings = onboardingProfile?.locale_settings || {};
   const notificationDefaults: NotificationSetting[] = [
     { key: 'nueva_conv', label: 'Nueva conversacion entrante', email: true, whatsapp: false, browser: true, enabled: true },
@@ -375,7 +471,7 @@ export function OrganizationsPage() {
           {tabs.map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => switchTab(tab.key)}
               className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
                 activeTab === tab.key
                   ? 'bg-brand-500 text-white shadow-card'
@@ -416,7 +512,7 @@ export function OrganizationsPage() {
                 <div>
                   <div className="mb-1 flex justify-between text-xs">
                     <span className="text-ink-600">Conversaciones este mes</span>
-                    <span className="font-semibold text-ink-800">9.240 / ilimitado</span>
+                    <span className="font-semibold text-ink-800">{orgStats.convThisMonth} / ilimitado</span>
                   </div>
                   <div className="h-2 rounded-full bg-[rgba(17,17,16,0.06)]">
                     <div className="h-2 rounded-full bg-brand-500" style={{ width: '62%' }} />
@@ -424,9 +520,9 @@ export function OrganizationsPage() {
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-center">
                   {[
-                    { label: 'Agentes', val: '8' },
-                    { label: 'Artículos KB', val: '24' },
-                    { label: 'Campañas', val: '3' },
+                    { label: 'Agentes', val: orgStats.agents },
+                    { label: 'Artículos KB', val: orgStats.articles },
+                    { label: 'Campañas', val: orgStats.campaigns },
                   ].map((s) => (
                     <div key={s.label} className="rounded-xl bg-[rgba(17,17,16,0.025)] px-2 py-2">
                       <p className="text-sm font-bold text-ink-800">{s.val}</p>
@@ -511,114 +607,206 @@ export function OrganizationsPage() {
               </div>
 
               <div className="rounded-2xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md p-5 shadow-card">
-                  <h3 className="mb-3 font-bold text-ink-900">Metodos de pago</h3>
-                  <div className="space-y-1 divide-y divide-[rgba(17,17,16,0.06)]">
-                    <div className="pb-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextValue = !paymentMethods.includes('transferencia bancaria');
-                          togglePaymentMethod('transferencia bancaria', nextValue);
-                          updatePaymentSettings({ bank_transfer_enabled: nextValue });
-                        }}
-                        className="flex w-full items-center justify-between gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-white/60"
-                      >
-                        <div>
-                          <p className="text-sm font-semibold text-ink-900">Transferencia bancaria</p>
-                          <p className="text-xs text-ink-500">Muestra transferencia como opcion disponible en el chat.</p>
-                        </div>
-                        {paymentMethods.includes('transferencia bancaria') ? (
-                          <ToggleRight size={24} className="text-brand-500" />
-                        ) : (
-                          <ToggleLeft size={24} className="text-ink-300" />
-                        )}
-                      </button>
-                    </div>
-                    <div className="pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextValue = !paymentMethods.includes('efectivo');
-                          togglePaymentMethod('efectivo', nextValue);
-                          updatePaymentSettings({ cash_enabled: nextValue });
-                        }}
-                        className="flex w-full items-center justify-between gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-white/60"
-                      >
-                        <div>
-                          <p className="text-sm font-semibold text-ink-900">Efectivo</p>
-                          <p className="text-xs text-ink-500">Permite ofrecer pago en efectivo como alternativa.</p>
-                        </div>
-                        {paymentMethods.includes('efectivo') ? (
-                          <ToggleRight size={24} className="text-brand-500" />
-                        ) : (
-                          <ToggleLeft size={24} className="text-ink-300" />
-                        )}
-                      </button>
-                    </div>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-bold text-ink-900">Metodos de pago</h3>
+                    <p className="mt-1 text-xs text-ink-500">Define que puede ofrecer el asistente y deja listos los datos operativos para venta.</p>
                   </div>
-
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <label className="block">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Banco</span>
-                      <input
-                        value={String(paymentSettings.bank_name || '')}
-                        onChange={(e) => updatePaymentSettings({ bank_name: e.target.value })}
-                        placeholder="Ej: Bancolombia"
-                        className="mt-2 w-full rounded-xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md px-3 py-2 text-sm text-ink-700 outline-none focus:border-brand-400"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Tipo de cuenta</span>
-                      <input
-                        value={String(paymentSettings.account_type || '')}
-                        onChange={(e) => updatePaymentSettings({ account_type: e.target.value })}
-                        placeholder="Ej: Ahorros"
-                        className="mt-2 w-full rounded-xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md px-3 py-2 text-sm text-ink-700 outline-none focus:border-brand-400"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Numero de cuenta</span>
-                      <input
-                        value={String(paymentSettings.account_number || '')}
-                        onChange={(e) => updatePaymentSettings({ account_number: e.target.value })}
-                        placeholder="Ej: 12345678901"
-                        className="mt-2 w-full rounded-xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md px-3 py-2 text-sm text-ink-700 outline-none focus:border-brand-400"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Titular</span>
-                      <input
-                        value={String(paymentSettings.account_holder || '')}
-                        onChange={(e) => updatePaymentSettings({ account_holder: e.target.value })}
-                        placeholder="Ej: Valdiri Move SAS"
-                        className="mt-2 w-full rounded-xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md px-3 py-2 text-sm text-ink-700 outline-none focus:border-brand-400"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="mt-4 grid gap-3">
-                    <label className="block">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Nota de referencia</span>
-                      <textarea
-                        value={String(paymentSettings.payment_reference_note || '')}
-                        onChange={(e) => updatePaymentSettings({ payment_reference_note: e.target.value })}
-                        rows={2}
-                        placeholder="Ej: Enviar comprobante por chat con nombre y producto."
-                        className="mt-2 w-full resize-none rounded-xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md px-3 py-2 text-sm text-ink-700 outline-none focus:border-brand-400"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Instrucciones para efectivo</span>
-                      <textarea
-                        value={String(paymentSettings.cash_instructions || '')}
-                        onChange={(e) => updatePaymentSettings({ cash_instructions: e.target.value })}
-                        rows={2}
-                        placeholder="Ej: Pago en efectivo contra entrega o recogida en punto."
-                        className="mt-2 w-full resize-none rounded-xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md px-3 py-2 text-sm text-ink-700 outline-none focus:border-brand-400"
-                      />
-                    </label>
+                  <div className="rounded-full border border-[rgba(17,17,16,0.08)] bg-white/80 px-3 py-1.5 text-[11px] font-semibold text-ink-600">
+                    {paymentMethods.length} activos
                   </div>
                 </div>
+
+                <div className="mt-4 rounded-2xl border border-brand-200/60 bg-brand-50/60 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-brand-700">Uso en ventas</p>
+                      <p className="mt-1 text-xs leading-relaxed text-brand-700">
+                        El Sales Agent ofrecera estos metodos automaticamente en el chat. Si quieres explicarle condiciones, confirmacion o restricciones, hazlo desde <a href="/knowledge-base" className="font-semibold underline">Knowledge Base</a> con una politica de pago.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {paymentMethods.length ? paymentMethods.map((method) => (
+                        <span key={method} className="rounded-full border border-brand-200/70 bg-white/90 px-3 py-1 text-[11px] font-semibold text-brand-700">
+                          {method}
+                        </span>
+                      )) : (
+                        <span className="rounded-full border border-brand-200/70 bg-white/90 px-3 py-1 text-[11px] font-semibold text-brand-700">
+                          Sin metodos activos
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextValue = !paymentMethods.includes('transferencia bancaria');
+                      togglePaymentMethod('transferencia bancaria', nextValue);
+                      updatePaymentSettings({ bank_transfer_enabled: nextValue });
+                    }}
+                    className={`rounded-2xl border p-4 text-left transition ${
+                      paymentMethods.includes('transferencia bancaria')
+                        ? 'border-brand-300 bg-brand-50/70'
+                        : 'border-[rgba(17,17,16,0.08)] bg-white/80 hover:bg-white'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-ink-900">Transferencia bancaria</p>
+                        <p className="mt-1 text-xs text-ink-500">Disponible para que el asesor la ofrezca en el chat y en el cierre.</p>
+                      </div>
+                      {paymentMethods.includes('transferencia bancaria') ? (
+                        <ToggleRight size={24} className="text-brand-500" />
+                      ) : (
+                        <ToggleLeft size={24} className="text-ink-300" />
+                      )}
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextValue = !paymentMethods.includes('efectivo');
+                      togglePaymentMethod('efectivo', nextValue);
+                      updatePaymentSettings({ cash_enabled: nextValue });
+                    }}
+                    className={`rounded-2xl border p-4 text-left transition ${
+                      paymentMethods.includes('efectivo')
+                        ? 'border-brand-300 bg-brand-50/70'
+                        : 'border-[rgba(17,17,16,0.08)] bg-white/80 hover:bg-white'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-ink-900">Efectivo</p>
+                        <p className="mt-1 text-xs text-ink-500">Disponible como alternativa cuando el negocio permita pago presencial o contraentrega.</p>
+                      </div>
+                      {paymentMethods.includes('efectivo') ? (
+                        <ToggleRight size={24} className="text-brand-500" />
+                      ) : (
+                        <ToggleLeft size={24} className="text-ink-300" />
+                      )}
+                    </div>
+                  </button>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-[rgba(17,17,16,0.08)] bg-white/80 p-4">
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    {([
+                      { id: 'transferencia bancaria', label: 'Transferencia bancaria' },
+                      { id: 'efectivo', label: 'Efectivo' },
+                    ] as const).map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setPaymentDetailTab(tab.id)}
+                        className={`rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition ${
+                          paymentDetailTab === tab.id
+                            ? 'bg-ink-900 text-white'
+                            : 'border border-[rgba(17,17,16,0.10)] bg-white text-ink-500 hover:text-ink-800'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {paymentDetailTab === 'transferencia bancaria' ? (
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+                      <div>
+                        <div className="mb-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Datos bancarios</p>
+                          <p className="mt-1 text-xs text-ink-500">Informacion que el asesor comparte cuando el cliente elige transferencia.</p>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <label className="block">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Banco</span>
+                            <input
+                              value={String(paymentSettings.bank_name || '')}
+                              onChange={(e) => updatePaymentSettings({ bank_name: e.target.value })}
+                              placeholder="Ej: Bancolombia"
+                              className="mt-2 w-full rounded-xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md px-3 py-2 text-sm text-ink-700 outline-none focus:border-brand-400"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Tipo de cuenta</span>
+                            <input
+                              value={String(paymentSettings.account_type || '')}
+                              onChange={(e) => updatePaymentSettings({ account_type: e.target.value })}
+                              placeholder="Ej: Ahorros"
+                              className="mt-2 w-full rounded-xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md px-3 py-2 text-sm text-ink-700 outline-none focus:border-brand-400"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Numero de cuenta</span>
+                            <input
+                              value={String(paymentSettings.account_number || '')}
+                              onChange={(e) => updatePaymentSettings({ account_number: e.target.value })}
+                              placeholder="Ej: 12345678901"
+                              className="mt-2 w-full rounded-xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md px-3 py-2 text-sm text-ink-700 outline-none focus:border-brand-400"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Titular</span>
+                            <input
+                              value={String(paymentSettings.account_holder || '')}
+                              onChange={(e) => updatePaymentSettings({ account_holder: e.target.value })}
+                              placeholder="Ej: Valdiri Move SAS"
+                              className="mt-2 w-full rounded-xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md px-3 py-2 text-sm text-ink-700 outline-none focus:border-brand-400"
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="mb-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Instrucciones de confirmacion</p>
+                          <p className="mt-1 text-xs text-ink-500">Guia operativa para pedir soporte y validar el pago.</p>
+                        </div>
+                        <label className="block">
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Nota de referencia</span>
+                          <textarea
+                            value={String(paymentSettings.payment_reference_note || '')}
+                            onChange={(e) => updatePaymentSettings({ payment_reference_note: e.target.value })}
+                            rows={5}
+                            placeholder="Ej: Enviar comprobante por chat con nombre y producto."
+                            className="mt-2 w-full resize-none rounded-xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md px-3 py-2 text-sm text-ink-700 outline-none focus:border-brand-400"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                      <div className="rounded-2xl border border-[rgba(17,17,16,0.08)] bg-[rgba(17,17,16,0.02)] p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Resumen</p>
+                        <p className="mt-2 text-sm font-semibold text-ink-900">Pago en efectivo</p>
+                        <p className="mt-1 text-xs leading-relaxed text-ink-500">
+                          Usa este bloque para dejar claro si aplica contraentrega, pago en punto fisico o alguna validacion manual antes de cerrar.
+                        </p>
+                      </div>
+                      <div>
+                        <div className="mb-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Instrucciones para efectivo</p>
+                          <p className="mt-1 text-xs text-ink-500">Lo que debe decir el agente cuando el cliente elige esta alternativa.</p>
+                        </div>
+                        <label className="block">
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Detalle operativo</span>
+                          <textarea
+                            value={String(paymentSettings.cash_instructions || '')}
+                            onChange={(e) => updatePaymentSettings({ cash_instructions: e.target.value })}
+                            rows={6}
+                            placeholder="Ej: Pago en efectivo contra entrega o recogida en punto."
+                            className="mt-2 w-full resize-none rounded-xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md px-3 py-2 text-sm text-ink-700 outline-none focus:border-brand-400"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
               </div>
             </div>
           </div>
@@ -792,98 +980,17 @@ export function OrganizationsPage() {
             </div>
 
             <button
-              onClick={() => showSuccess('Configuración de horarios y SLA guardada')}
-              className="w-full rounded-full bg-brand-500 py-2 text-sm font-semibold text-white hover:bg-brand-600 transition"
+              onClick={() => void saveHorarios()}
+              disabled={savingOrganization}
+              className="w-full rounded-full bg-brand-500 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60 transition"
             >
-              Guardar configuración
+              {savingOrganization ? 'Guardando...' : 'Guardar configuración'}
             </button>
           </div>
         </div>
       )}
 
-      {/* TAB 3 — Canales */}
-      {activeTab === 'canales' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-bold text-ink-900">Canales configurados</h2>
-            <button
-              onClick={() => setShowAddChannel(true)}
-              className="flex items-center gap-2 rounded-full bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 transition"
-            >
-              <Plus size={14} /> Agregar canal
-            </button>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            {[
-              { id: 'whatsapp', name: 'WhatsApp Business', status: 'activo', detail: '+57 300 ***-**90', extra: 'Configurado', color: 'bg-emerald-500', initial: 'WA', statusBadge: 'bg-emerald-100 text-emerald-700', canDisconnect: true },
-              { id: 'web', name: 'Chat Web', status: 'activo', detail: 'Widget instalado en 1 dominio', extra: 'Activo', color: 'bg-brand-500', initial: 'WB', statusBadge: 'bg-emerald-100 text-emerald-700', canDisconnect: true },
-              { id: 'instagram', name: 'Instagram DM', status: 'pendiente', detail: 'Pendiente autorización', extra: 'Conectar', color: 'bg-pink-500', initial: 'IG', statusBadge: 'bg-amber-100 text-amber-700', canDisconnect: false },
-              { id: 'tiktok', name: 'TikTok', status: 'inactivo', detail: 'No configurado', extra: 'Configurar', color: 'bg-slate-700', initial: 'TK', statusBadge: 'bg-[rgba(17,17,16,0.06)] text-ink-600', canDisconnect: false },
-            ].map((ch) => (
-              <div key={ch.id} className="rounded-2xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md p-5 shadow-card">
-                <div className="flex items-start gap-4">
-                  <div className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl ${ch.color} text-white text-sm font-bold`}>
-                    {ch.initial}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="font-semibold text-ink-900">{ch.name}</p>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${ch.statusBadge}`}>
-                        {ch.status === 'activo' ? 'Activo' : ch.status === 'pendiente' ? 'Pendiente' : 'Inactivo'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-ink-400">{ch.detail}</p>
-                    <p className="text-xs text-ink-400 mt-0.5">Última actividad: hace 5 min</p>
-                  </div>
-                </div>
-                <div className="mt-4 flex gap-2">
-                  <button
-                    onClick={() => showSuccess(`Configurando ${ch.name}...`)}
-                    className="flex-1 rounded-xl border border-[rgba(17,17,16,0.09)] py-1.5 text-xs font-semibold text-ink-700 hover:bg-[rgba(17,17,16,0.025)] transition"
-                  >
-                    {ch.canDisconnect ? 'Editar' : ch.extra}
-                  </button>
-                  {ch.canDisconnect && (
-                    <button
-                      onClick={() => showInfo(`¿Deseas desconectar ${ch.name}? Contacta soporte.`)}
-                      className="flex-1 rounded-xl border border-red-100 bg-red-50 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 transition"
-                    >
-                      Desconectar
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Add channel modal */}
-          <AnimatePresence>
-            {showAddChannel && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" style={{ background: "rgba(17,17,16,0.45)", backdropFilter: "blur(6px)" }}>
-                <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-                  className="w-full max-w-sm rounded-2xl bg-white/70 backdrop-blur-sm p-6 shadow-xl">
-                  <div className="mb-4 flex items-center justify-between">
-                    <h3 className="font-bold text-ink-900">Agregar canal</h3>
-                    <button onClick={() => setShowAddChannel(false)} className="rounded-lg p-1.5 text-ink-400 hover:bg-[rgba(17,17,16,0.06)] transition"><X size={15} /></button>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {['Telegram', 'Email', 'SMS', 'Messenger'].map((c) => (
-                      <button key={c} onClick={() => { setShowAddChannel(false); showInfo(`Integración con ${c} próximamente disponible.`); }}
-                        className="rounded-xl border border-[rgba(17,17,16,0.09)] p-4 text-sm font-semibold text-ink-700 hover:bg-[rgba(17,17,16,0.025)] hover:border-brand-300 transition">
-                        {c}
-                      </button>
-                    ))}
-                  </div>
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      )}
-
-      {/* TAB 4 — Seguridad */}
+      {/* TAB: Seguridad */}
       {activeTab === 'seguridad' && (
         <div className="grid gap-6 lg:grid-cols-2">
           {/* MFA + Password policy */}
@@ -938,9 +1045,9 @@ export function OrganizationsPage() {
                 <span className="text-sm text-ink-400">días</span>
               </div>
 
-              <button onClick={() => showSuccess('Política de contraseñas actualizada')}
-                className="w-full rounded-full bg-brand-500 py-2 text-sm font-semibold text-white hover:bg-brand-600 transition">
-                Guardar política
+              <button onClick={() => void saveSeguridad()} disabled={savingOrganization}
+                className="w-full rounded-full bg-brand-500 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60 transition">
+                {savingOrganization ? 'Guardando...' : 'Guardar configuración de seguridad'}
               </button>
             </div>
           </div>
@@ -982,26 +1089,43 @@ export function OrganizationsPage() {
             <div className="rounded-2xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.08)] bg-white/65 backdrop-blur-md p-6 shadow-card">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="font-bold text-ink-900">Registro de auditoría</h2>
-                <button onClick={() => showSuccess('Audit log exportado como CSV')}
-                  className="flex items-center gap-1.5 rounded-full bg-[rgba(17,17,16,0.05)] px-3 py-1.5 text-[12px] font-semibold text-ink-700 hover:bg-[rgba(17,17,16,0.09)] transition">
-                  <Download size={12} /> Exportar
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => void loadAuditLog()}
+                    disabled={loadingAuditLog}
+                    className="flex items-center gap-1.5 rounded-full bg-[rgba(17,17,16,0.05)] px-3 py-1.5 text-[12px] font-semibold text-ink-700 hover:bg-[rgba(17,17,16,0.09)] transition disabled:opacity-50"
+                  >
+                    {loadingAuditLog ? '...' : 'Actualizar'}
+                  </button>
+                  <button
+                    onClick={() => void api.downloadSecurityAuditLogCsv().catch((e: unknown) => showError('Audit Log', e instanceof Error ? e.message : 'Error al exportar'))}
+                    className="flex items-center gap-1.5 rounded-full bg-[rgba(17,17,16,0.05)] px-3 py-1.5 text-[12px] font-semibold text-ink-700 hover:bg-[rgba(17,17,16,0.09)] transition"
+                  >
+                    <Download size={12} /> Exportar CSV
+                  </button>
+                </div>
               </div>
-              <div className="space-y-2">
-                {ORGANIZATION_AUDIT_LOG.map((ev) => (
-                  <div key={ev.id} className="flex items-start gap-3 rounded-xl bg-[rgba(17,17,16,0.025)] px-3 py-2.5">
-                    <span className={`mt-0.5 rounded-full px-2 py-0.5 text-[10px] font-bold flex-shrink-0 ${EVENT_COLORS[ev.tipo]}`}>
-                      {ev.tipo}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-ink-800 truncate">{ev.evento}</p>
-                      <p className="text-[10px] text-ink-400">{ev.usuario} · {ev.ip}</p>
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {loadingAuditLog ? (
+                  <p className="py-6 text-center text-sm text-ink-400">Cargando eventos...</p>
+                ) : auditLog.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-ink-400">No hay eventos de auditoría registrados.</p>
+                ) : (
+                  auditLog.map((ev) => (
+                    <div key={ev.id} className="flex items-start gap-3 rounded-xl bg-[rgba(17,17,16,0.025)] px-3 py-2.5">
+                      <span className={`mt-0.5 rounded-full px-2 py-0.5 text-[10px] font-bold flex-shrink-0 ${AUDIT_EVENT_COLORS[ev.event_type] ?? 'bg-gray-100 text-gray-700'}`}>
+                        {ev.event_type.replace(/_/g, ' ')}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-ink-800 truncate">{ev.event_description}</p>
+                        <p className="text-[10px] text-ink-400">{ev.actor_email || '—'} · {ev.ip_address || 'IP desconocida'}</p>
+                      </div>
+                      <p className="text-[10px] text-ink-400 flex-shrink-0 whitespace-nowrap">
+                        {new Date(ev.created_at).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}
+                      </p>
                     </div>
-                    <p className="text-[10px] text-ink-400 flex-shrink-0">
-                      {new Date(ev.timestamp).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </div>

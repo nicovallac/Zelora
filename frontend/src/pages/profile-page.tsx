@@ -1,665 +1,406 @@
-import { useState, useRef } from 'react';
-import { Pencil, Eye, EyeOff, Check, X, ShieldCheck, ShieldOff, Monitor, Smartphone, Trash2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState } from 'react';
+import { AlertTriangle, Eye, EyeOff, Monitor, Pencil, ShieldOff, Smartphone } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { PageHeader } from '../components/ui/page-header';
-import { api } from '../services/api';
+import { api, type MyAgentProfileApiItem } from '../services/api';
 
 type Tab = 'perfil' | 'seguridad' | 'sesiones';
 
-function getInitials(nombre: string) {
-  return nombre
+function getInitials(value: string) {
+  return value
     .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('') || 'U';
 }
 
-function getPasswordStrength(pwd: string): { label: string; color: string; width: string } {
-  if (pwd.length === 0) return { label: '', color: '', width: '0%' };
-  const hasUpper = /[A-Z]/.test(pwd);
-  const hasNumber = /[0-9]/.test(pwd);
-  const hasSpecial = /[^A-Za-z0-9]/.test(pwd);
-  const score = (pwd.length >= 8 ? 1 : 0) + (hasUpper ? 1 : 0) + (hasNumber ? 1 : 0) + (hasSpecial ? 1 : 0);
-  if (score <= 1) return { label: 'Débil', color: 'bg-red-500', width: '33%' };
+function getPasswordStrength(password: string): { label: string; color: string; width: string } {
+  if (!password) return { label: '', color: '', width: '0%' };
+  const hasUpper = /[A-Z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSpecial = /[^A-Za-z0-9]/.test(password);
+  const score = (password.length >= 8 ? 1 : 0) + (hasUpper ? 1 : 0) + (hasNumber ? 1 : 0) + (hasSpecial ? 1 : 0);
+  if (score <= 1) return { label: 'Debil', color: 'bg-red-500', width: '33%' };
   if (score <= 3) return { label: 'Media', color: 'bg-amber-500', width: '66%' };
   return { label: 'Fuerte', color: 'bg-emerald-500', width: '100%' };
 }
 
+function buildCurrentSession(profile: MyAgentProfileApiItem | null) {
+  if (!profile) return [];
+  return [
+    {
+      id: 'current',
+      device: 'Sesion actual',
+      ip: 'Protegida',
+      location: 'Inventario de sesiones no habilitado',
+      inicio: profile.created_at ? new Date(profile.created_at).toLocaleString('es-CO') : 'N/D',
+      lastActivity: profile.last_seen ? new Date(profile.last_seen).toLocaleString('es-CO') : 'Reciente',
+      current: true,
+    },
+  ];
+}
+
 export function ProfilePage() {
-  const { agent } = useAuth();
-  const { showSuccess, showInfo, showError } = useNotification();
+  const { agent, refreshAgent } = useAuth();
+  const { showError, showInfo, showSuccess } = useNotification();
   const [tab, setTab] = useState<Tab>('perfil');
-
-  // Profile tab state
-  const [editingField, setEditingField] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [profile, setProfile] = useState<MyAgentProfileApiItem | null>(null);
   const [nombre, setNombre] = useState(agent?.nombre ?? '');
-  const [email, setEmail] = useState(agent?.email ?? '');
-  const [tempNombre, setTempNombre] = useState(nombre);
-  const [tempEmail, setTempEmail] = useState(email);
-  const isAdmin = agent?.rol === 'admin';
-
-  // Security tab state
+  const [tempNombre, setTempNombre] = useState(agent?.nombre ?? '');
   const [currentPwd, setCurrentPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
   const [showCurrentPwd, setShowCurrentPwd] = useState(false);
   const [showNewPwd, setShowNewPwd] = useState(false);
   const [showConfirmPwd, setShowConfirmPwd] = useState(false);
-  const [mfaEnabled, setMfaEnabled] = useState(false);
-  const [mfaModalOpen, setMfaModalOpen] = useState(false);
-  const [mfaStep, setMfaStep] = useState(1);
-  const [mfaCode, setMfaCode] = useState<string[]>(Array(6).fill(''));
-  const mfaInputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const [trustedDevices, setTrustedDevices] = useState<Array<{ id: string; device: string; location: string; lastAccess: string }>>([]);
-
-  // Sessions tab state
-  const [sessions, setSessions] = useState<Array<{ id: string; device: string; ip: string; location: string; inicio: string; lastActivity: string; current: boolean }>>([]);
-  const [confirmCloseAll, setConfirmCloseAll] = useState(false);
 
   const pwdStrength = getPasswordStrength(newPwd);
+  const sessions = buildCurrentSession(profile);
+  const tabs: Array<{ key: Tab; label: string }> = [
+    { key: 'perfil', label: 'Perfil' },
+    { key: 'seguridad', label: 'Seguridad' },
+    { key: 'sesiones', label: 'Sesiones' },
+  ];
 
-  function startEdit(field: string) {
-    if (field === 'nombre') setTempNombre(nombre);
-    if (field === 'email') setTempEmail(email);
-    setEditingField(field);
-  }
+  useEffect(() => {
+    let cancelled = false;
 
-  function cancelEdit() {
-    setEditingField(null);
-  }
+    async function loadProfile() {
+      setLoading(true);
+      try {
+        const nextProfile = await api.getMyAgentProfile();
+        if (cancelled) return;
+        const fullName = [nextProfile.nombre, nextProfile.apellido].filter(Boolean).join(' ').trim() || nextProfile.nombre;
+        setProfile(nextProfile);
+        setNombre(fullName);
+        setTempNombre(fullName);
+      } catch (error) {
+        if (!cancelled) {
+          showError('Perfil', error instanceof Error ? error.message : 'No se pudo cargar el perfil.');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
 
-  function saveField(field: string) {
-    if (field === 'nombre') setNombre(tempNombre);
-    if (field === 'email') setEmail(tempEmail);
-    setEditingField(null);
+    void loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [showError]);
+
+  async function reloadProfile() {
+    const nextProfile = await api.getMyAgentProfile();
+    const fullName = [nextProfile.nombre, nextProfile.apellido].filter(Boolean).join(' ').trim() || nextProfile.nombre;
+    setProfile(nextProfile);
+    setNombre(fullName);
+    setTempNombre(fullName);
   }
 
   async function handleSaveProfile() {
+    const trimmedName = tempNombre.trim();
+    if (!trimmedName) {
+      showError('Perfil', 'El nombre no puede estar vacio.');
+      return;
+    }
     try {
-      await api.updateAgent(agent?.id ?? '', { nombre, email });
+      setSavingProfile(true);
+      await api.updateMyAgentProfile({ nombre: trimmedName });
+      await reloadProfile();
+      await refreshAgent();
+      setEditingName(false);
       showSuccess('Perfil actualizado');
-    } catch {
-      showSuccess('Perfil actualizado');
+    } catch (error) {
+      showError('Perfil', error instanceof Error ? error.message : 'No se pudo actualizar el perfil.');
+    } finally {
+      setSavingProfile(false);
     }
   }
 
-  function handleChangePassword() {
+  async function handleChangePassword() {
+    if (!currentPwd.trim()) {
+      showError('Seguridad', 'Debes ingresar tu contrasena actual.');
+      return;
+    }
     if (newPwd.length < 8) {
-      showError('La contraseña debe tener al menos 8 caracteres');
+      showError('Seguridad', 'La contrasena debe tener al menos 8 caracteres.');
       return;
     }
     if (newPwd !== confirmPwd) {
-      showError('Las contraseñas no coinciden');
+      showError('Seguridad', 'Las contrasenas no coinciden.');
       return;
     }
-    showSuccess('Contraseña actualizada correctamente');
-    setCurrentPwd('');
-    setNewPwd('');
-    setConfirmPwd('');
-  }
-
-  function handleMfaCodeInput(index: number, value: string) {
-    if (!/^\d?$/.test(value)) return;
-    const updated = [...mfaCode];
-    updated[index] = value;
-    setMfaCode(updated);
-    if (value && index < 5) {
-      mfaInputRefs.current[index + 1]?.focus();
+    try {
+      setChangingPassword(true);
+      await api.changeMyPassword({ old_password: currentPwd, new_password: newPwd });
+      setCurrentPwd('');
+      setNewPwd('');
+      setConfirmPwd('');
+      showSuccess('Contrasena actualizada');
+    } catch (error) {
+      showError('Seguridad', error instanceof Error ? error.message : 'No se pudo cambiar la contrasena.');
+    } finally {
+      setChangingPassword(false);
     }
   }
 
-  function handleMfaCodeKeyDown(index: number, e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Backspace' && !mfaCode[index] && index > 0) {
-      mfaInputRefs.current[index - 1]?.focus();
-    }
+  function renderPasswordInput(
+    label: string,
+    value: string,
+    onChange: (value: string) => void,
+    visible: boolean,
+    onToggle: () => void,
+  ) {
+    return (
+      <div className="space-y-1">
+        <label className="text-xs font-semibold uppercase tracking-wide text-ink-500">{label}</label>
+        <div className="relative">
+          <input
+            type={visible ? 'text' : 'password'}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-4 py-3 pr-10 text-[13px] focus:border-brand-400 focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={onToggle}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-400 transition hover:text-ink-700"
+          >
+            {visible ? <EyeOff size={15} /> : <Eye size={15} />}
+          </button>
+        </div>
+      </div>
+    );
   }
-
-  function handleActivateMfa() {
-    if (mfaStep === 1) {
-      setMfaStep(2);
-    } else if (mfaStep === 2) {
-      setMfaStep(3);
-      setTimeout(() => {
-        setMfaEnabled(true);
-        setMfaModalOpen(false);
-        setMfaStep(1);
-        setMfaCode(Array(6).fill(''));
-        showSuccess('MFA activado correctamente');
-      }, 1500);
-    }
-  }
-
-  function handleRevokeDevice(id: string) {
-    setTrustedDevices((prev) => prev.filter((d) => d.id !== id));
-    showSuccess('Dispositivo revocado');
-  }
-
-  function handleTerminateSession(id: string) {
-    setSessions((prev) => prev.filter((s) => s.id !== id));
-    showSuccess('Sesión terminada');
-  }
-
-  function handleCloseAllSessions() {
-    setSessions((prev) => prev.filter((s) => s.current));
-    setConfirmCloseAll(false);
-    showSuccess('Todas las demás sesiones han sido cerradas');
-  }
-
-  const TABS: { key: Tab; label: string }[] = [
-    { key: 'perfil', label: 'Perfil' },
-    { key: 'seguridad', label: 'Seguridad' },
-    { key: 'sesiones', label: 'Sesiones activas' },
-  ];
 
   return (
     <div className="page-shell">
       <div className="page-stack">
-      {/* Header */}
-      <PageHeader
-        eyebrow="Cuenta"
-        title="Mi perfil"
-        description="Gestiona tu informacion personal y configuracion de seguridad."
-      />
+        <PageHeader
+          eyebrow="Cuenta"
+          title="Mi perfil"
+          description="Verifica tu informacion personal y las opciones reales de seguridad disponibles."
+        />
 
-      {/* Tabs */}
-      <div className="page-section-card !w-fit p-1">
-      <div className="flex gap-1 rounded-2xl border border-[rgba(17,17,16,0.08)] bg-white/70 p-1 shadow-card w-fit backdrop-blur-sm">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`rounded-full px-4 py-2 text-[13px] font-semibold transition ${
-              tab === t.key ? 'bg-brand-500 text-white shadow-card' : 'text-ink-600 hover:bg-[rgba(17,17,16,0.04)]'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-      </div>
-
-      {/* Tab: Perfil */}
-      {tab === 'perfil' && (
-        <div className="grid gap-6 lg:grid-cols-3">
-          {/* Avatar card */}
-          <div className="rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/70 shadow-card backdrop-blur-sm p-6 flex flex-col items-center gap-4">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-100 text-2xl font-bold text-brand-700">
-              {getInitials(nombre || 'U')}
-            </div>
-            <div className="text-center">
-              <p className="font-bold text-ink-900">{nombre}</p>
-              <p className="text-sm text-ink-500">{email}</p>
-            </div>
-            <button
-              onClick={() => showInfo('Función de cambio de foto próximamente disponible')}
-              className="rounded-full border border-[rgba(17,17,16,0.12)] bg-[rgba(255,255,255,0.75)] px-4 py-2 text-[13px] font-semibold text-ink-700 hover:bg-white transition"
-            >
-              Cambiar foto
-            </button>
-            {/* Stats */}
-            <div className="w-full border-t border-[rgba(17,17,16,0.06)] pt-4 space-y-2">
-              <div className="flex justify-between text-xs text-ink-500">
-                <span>Conversaciones gestionadas</span>
-                <span className="font-bold text-ink-900">0</span>
-              </div>
-              <div className="flex justify-between text-xs text-ink-500">
-                <span>Resueltas</span>
-                <span className="font-bold text-emerald-600">0</span>
-              </div>
-              <div className="flex justify-between text-xs text-ink-500">
-                <span>CSAT promedio</span>
-                <span className="font-bold text-brand-400">-</span>
-              </div>
-            </div>
+        <div className="page-section-card !w-fit p-1">
+          <div className="flex w-fit gap-1 rounded-2xl border border-[rgba(17,17,16,0.08)] bg-white/70 p-1 shadow-card backdrop-blur-sm">
+            {tabs.map((item) => (
+              <button
+                key={item.key}
+                onClick={() => setTab(item.key)}
+                className={`rounded-full px-4 py-2 text-[13px] font-semibold transition ${
+                  tab === item.key ? 'bg-brand-500 text-white shadow-card' : 'text-ink-600 hover:bg-[rgba(17,17,16,0.04)]'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
+        </div>
 
-          {/* Form card */}
-          <div className="lg:col-span-2 rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/70 shadow-card backdrop-blur-sm p-6 space-y-5">
-            <p className="font-bold text-ink-900">Información personal</p>
-
-            {/* Nombre */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-ink-500 uppercase tracking-wide">Nombre completo</label>
-              {editingField === 'nombre' ? (
-                <div className="flex gap-2">
-                  <input
-                    className="flex-1 rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2 text-[13px] focus:outline-none focus:border-brand-400"
-                    value={tempNombre}
-                    onChange={(e) => setTempNombre(e.target.value)}
-                    autoFocus
-                  />
-                  <button onClick={() => saveField('nombre')} className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-500 text-white hover:bg-brand-500">
-                    <Check size={14} />
-                  </button>
-                  <button onClick={cancelEdit} className="flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(17,17,16,0.12)] bg-[rgba(255,255,255,0.75)] text-ink-500 hover:bg-white">
-                    <X size={14} />
-                  </button>
+        {tab === 'perfil' ? (
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="flex flex-col items-center gap-4 rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/70 p-6 shadow-card backdrop-blur-sm">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-100 text-2xl font-bold text-brand-700">
+                {getInitials(nombre || 'Usuario')}
+              </div>
+              <div className="text-center">
+                <p className="font-bold text-ink-900">{loading ? 'Cargando...' : nombre}</p>
+                <p className="text-sm text-ink-500">{profile?.email || agent?.email || '-'}</p>
+              </div>
+              <button
+                onClick={() => showInfo('Perfil', 'La subida de avatar aun no esta habilitada.')}
+                className="rounded-full border border-[rgba(17,17,16,0.12)] bg-[rgba(255,255,255,0.75)] px-4 py-2 text-[13px] font-semibold text-ink-700 transition hover:bg-white"
+              >
+                Cambiar foto
+              </button>
+              <div className="w-full space-y-2 border-t border-[rgba(17,17,16,0.06)] pt-4 text-xs text-ink-500">
+                <div className="flex justify-between">
+                  <span>Rol</span>
+                  <span className="font-bold text-ink-900">{profile?.rol || agent?.rol || '-'}</span>
                 </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="flex-1 rounded-2xl bg-[rgba(17,17,16,0.025)] border border-[rgba(17,17,16,0.06)] px-3 py-2 text-[13px] text-ink-900">{nombre}</span>
-                  <button onClick={() => startEdit('nombre')} className="flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(17,17,16,0.12)] bg-[rgba(255,255,255,0.75)] text-ink-400 hover:bg-white hover:text-ink-700">
-                    <Pencil size={13} />
-                  </button>
+                <div className="flex justify-between">
+                  <span>Ultima actividad</span>
+                  <span className="font-bold text-ink-900">{profile?.last_seen ? new Date(profile.last_seen).toLocaleString('es-CO') : 'Reciente'}</span>
                 </div>
-              )}
+              </div>
             </div>
 
-            {/* Email */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-ink-500 uppercase tracking-wide">Email</label>
-              {isAdmin && editingField === 'email' ? (
-                <div className="flex gap-2">
-                  <input
-                    type="email"
-                    className="flex-1 rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2 text-[13px] focus:outline-none focus:border-brand-400"
-                    value={tempEmail}
-                    onChange={(e) => setTempEmail(e.target.value)}
-                    autoFocus
-                  />
-                  <button onClick={() => saveField('email')} className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-500 text-white hover:bg-brand-500">
-                    <Check size={14} />
-                  </button>
-                  <button onClick={cancelEdit} className="flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(17,17,16,0.12)] bg-[rgba(255,255,255,0.75)] text-ink-500 hover:bg-white">
-                    <X size={14} />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="flex-1 rounded-2xl bg-[rgba(17,17,16,0.025)] border border-[rgba(17,17,16,0.06)] px-3 py-2 text-[13px] text-ink-900">{email}</span>
-                  {isAdmin && (
-                    <button onClick={() => startEdit('email')} className="flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(17,17,16,0.12)] bg-[rgba(255,255,255,0.75)] text-ink-400 hover:bg-white hover:text-ink-700">
-                      <Pencil size={13} />
-                    </button>
+            <div className="lg:col-span-2 rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/70 p-6 shadow-card backdrop-blur-sm">
+              <p className="font-bold text-ink-900">Informacion personal</p>
+              <div className="mt-5 space-y-5">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-ink-500">Nombre</label>
+                  {editingName ? (
+                    <div className="flex gap-2">
+                      <input
+                        value={tempNombre}
+                        onChange={(event) => setTempNombre(event.target.value)}
+                        className="flex-1 rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2 text-[13px] focus:border-brand-400 focus:outline-none"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => void handleSaveProfile()}
+                        disabled={savingProfile}
+                        className="rounded-full bg-brand-500 px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-60"
+                      >
+                        {savingProfile ? '...' : 'Guardar'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setTempNombre(nombre);
+                          setEditingName(false);
+                        }}
+                        className="rounded-full border border-[rgba(17,17,16,0.12)] px-4 py-2 text-[13px] font-semibold text-ink-700"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="flex-1 rounded-2xl border border-[rgba(17,17,16,0.06)] bg-[rgba(17,17,16,0.025)] px-3 py-2 text-[13px] text-ink-900">
+                        {loading ? 'Cargando...' : nombre}
+                      </span>
+                      <button
+                        onClick={() => setEditingName(true)}
+                        className="flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(17,17,16,0.12)] bg-[rgba(255,255,255,0.75)] text-ink-400 transition hover:bg-white hover:text-ink-700"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
 
-            {/* Rol */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-ink-500 uppercase tracking-wide">Rol</label>
-              <div className="flex items-center gap-2">
-                <span
-                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                    agent?.rol === 'admin'
-                      ? 'bg-purple-100 text-purple-700'
-                      : 'bg-blue-100 text-blue-700'
-                  }`}
-                >
-                  {agent?.rol === 'admin' ? 'Administrador' : 'Asesor'}
-                </span>
-              </div>
-            </div>
-
-            {/* Miembro desde */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-ink-500 uppercase tracking-wide">Miembro desde</label>
-              <span className="block rounded-2xl bg-[rgba(17,17,16,0.025)] border border-[rgba(17,17,16,0.06)] px-3 py-2 text-[13px] text-ink-900">1 de enero, 2026</span>
-            </div>
-
-            <div className="pt-2">
-              <button
-                onClick={handleSaveProfile}
-                className="rounded-full bg-brand-500 px-6 py-2.5 text-[13px] font-semibold text-white hover:bg-brand-500 transition shadow-card"
-              >
-                Guardar cambios
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tab: Seguridad */}
-      {tab === 'seguridad' && (
-        <div className="space-y-6">
-          {/* Cambiar contraseña */}
-          <div className="rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/70 shadow-card backdrop-blur-sm p-6 space-y-4">
-            <p className="font-bold text-ink-900">Cambiar contraseña</p>
-
-            {/* Contraseña actual */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-ink-500 uppercase tracking-wide">Contraseña actual</label>
-              <div className="relative">
-                <input
-                  type={showCurrentPwd ? 'text' : 'password'}
-                  className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-4 py-3 pr-10 text-[13px] focus:outline-none focus:border-brand-400"
-                  value={currentPwd}
-                  onChange={(e) => setCurrentPwd(e.target.value)}
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700"
-                  onClick={() => setShowCurrentPwd((v) => !v)}
-                >
-                  {showCurrentPwd ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
-            </div>
-
-            {/* Nueva contraseña */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-ink-500 uppercase tracking-wide">Nueva contraseña</label>
-              <div className="relative">
-                <input
-                  type={showNewPwd ? 'text' : 'password'}
-                  className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-4 py-3 pr-10 text-[13px] focus:outline-none focus:border-brand-400"
-                  value={newPwd}
-                  onChange={(e) => setNewPwd(e.target.value)}
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700"
-                  onClick={() => setShowNewPwd((v) => !v)}
-                >
-                  {showNewPwd ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
-              {/* Strength indicator */}
-              {newPwd.length > 0 && (
-                <div className="space-y-1 mt-1">
-                  <div className="h-1.5 w-full rounded-full bg-[rgba(17,17,16,0.06)] overflow-hidden">
-                    <div
-                      className={`h-1.5 rounded-full transition-all ${pwdStrength.color}`}
-                      style={{ width: pwdStrength.width }}
-                    />
-                  </div>
-                  <p className="text-xs text-ink-500">Seguridad: <span className="font-semibold">{pwdStrength.label}</span></p>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-ink-500">Email</label>
+                  <span className="block rounded-2xl border border-[rgba(17,17,16,0.06)] bg-[rgba(17,17,16,0.025)] px-3 py-2 text-[13px] text-ink-900">
+                    {profile?.email || agent?.email || '-'}
+                  </span>
+                  <p className="text-[11px] text-ink-400">El cambio de email no esta habilitado desde esta pantalla para evitar cambios sin verificacion.</p>
                 </div>
-              )}
-            </div>
 
-            {/* Confirmar contraseña */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-ink-500 uppercase tracking-wide">Confirmar contraseña</label>
-              <div className="relative">
-                <input
-                  type={showConfirmPwd ? 'text' : 'password'}
-                  className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-4 py-3 pr-10 text-[13px] focus:outline-none focus:border-brand-400"
-                  value={confirmPwd}
-                  onChange={(e) => setConfirmPwd(e.target.value)}
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700"
-                  onClick={() => setShowConfirmPwd((v) => !v)}
-                >
-                  {showConfirmPwd ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
-              {confirmPwd && newPwd !== confirmPwd && (
-                <p className="text-xs text-red-500 mt-1">Las contraseñas no coinciden</p>
-              )}
-            </div>
-
-            <button
-              onClick={handleChangePassword}
-              className="rounded-full bg-brand-500 px-6 py-2.5 text-[13px] font-semibold text-white hover:bg-brand-500 transition shadow-card"
-            >
-              Cambiar contraseña
-            </button>
-          </div>
-
-          {/* MFA */}
-          <div className="rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/70 shadow-card backdrop-blur-sm p-6 space-y-4">
-            <p className="font-bold text-ink-900">Autenticación de dos factores (MFA)</p>
-
-            {!mfaEnabled ? (
-              <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                <ShieldOff className="text-amber-600 mt-0.5 shrink-0" size={18} />
-                <div>
-                  <p className="text-sm font-semibold text-amber-800">MFA desactivado</p>
-                  <p className="text-xs text-amber-700">Tu cuenta es más vulnerable sin autenticación de dos factores.</p>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-ink-500">Miembro desde</label>
+                  <span className="block rounded-2xl border border-[rgba(17,17,16,0.06)] bg-[rgba(17,17,16,0.025)] px-3 py-2 text-[13px] text-ink-900">
+                    {profile?.created_at ? new Date(profile.created_at).toLocaleDateString('es-CO') : '-'}
+                  </span>
                 </div>
               </div>
-            ) : (
-              <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                <ShieldCheck className="text-emerald-600" size={18} />
-                <p className="text-sm font-semibold text-emerald-800">MFA activado — tu cuenta está protegida</p>
-              </div>
-            )}
-
-            {!mfaEnabled && (
-              <button
-                onClick={() => { setMfaModalOpen(true); setMfaStep(1); }}
-                className="rounded-full bg-brand-500 px-6 py-2.5 text-[13px] font-semibold text-white hover:bg-brand-500 transition shadow-card"
-              >
-                Activar MFA
-              </button>
-            )}
-          </div>
-
-          {/* Dispositivos confiables */}
-          <div className="rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/70 shadow-card backdrop-blur-sm">
-            <div className="border-b border-[rgba(17,17,16,0.06)] px-6 py-4">
-              <p className="font-bold text-ink-900">Dispositivos confiables</p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-[rgba(17,17,16,0.06)] text-left text-xs font-semibold text-ink-500">
-                    <th className="px-6 py-3">Dispositivo</th>
-                    <th className="px-6 py-3">Ubicación</th>
-                    <th className="px-6 py-3">Último acceso</th>
-                    <th className="px-6 py-3">Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trustedDevices.map((d) => (
-                    <tr key={d.id} className="border-b border-[rgba(17,17,16,0.04)] hover:bg-[rgba(17,17,16,0.02)] transition">
-                      <td className="px-6 py-3 text-[13px] text-ink-900 flex items-center gap-2">
-                        <Monitor size={14} className="text-ink-400" />
-                        {d.device}
-                      </td>
-                      <td className="px-6 py-3 text-[13px] text-ink-600">{d.location}</td>
-                      <td className="px-6 py-3 text-[13px] text-ink-500">{d.lastAccess}</td>
-                      <td className="px-6 py-3">
-                        <button
-                          onClick={() => handleRevokeDevice(d.id)}
-                          className="rounded-full border border-red-200 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 transition"
-                        >
-                          Revocar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           </div>
-        </div>
-      )}
+        ) : null}
 
-      {/* Tab: Sesiones activas */}
-      {tab === 'sesiones' && (
-        <div className="space-y-4">
-          <div className="rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/70 shadow-card backdrop-blur-sm">
-            <div className="flex items-center justify-between border-b border-[rgba(17,17,16,0.06)] px-6 py-4">
-              <p className="font-bold text-ink-900">Sesiones activas</p>
-              <button
-                onClick={() => setConfirmCloseAll(true)}
-                className="rounded-full border border-red-300 px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition"
-              >
-                Cerrar todas las demás sesiones
-              </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-[rgba(17,17,16,0.06)] text-left text-xs font-semibold text-ink-500">
-                    <th className="px-6 py-3">Dispositivo</th>
-                    <th className="px-6 py-3">IP</th>
-                    <th className="px-6 py-3">Ubicación</th>
-                    <th className="px-6 py-3">Inicio de sesión</th>
-                    <th className="px-6 py-3">Última actividad</th>
-                    <th className="px-6 py-3">Terminar</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessions.map((s) => (
-                    <tr key={s.id} className={`border-b border-[rgba(17,17,16,0.04)] transition ${s.current ? 'bg-emerald-50' : 'hover:bg-[rgba(17,17,16,0.02)]'}`}>
-                      <td className="px-6 py-3">
-                        <div className="flex items-center gap-2">
-                          <Smartphone size={14} className="text-ink-400" />
-                          <span className="text-[13px] text-ink-900">{s.device}</span>
-                          {s.current && (
-                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                              Sesión actual
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-3 text-[13px] text-ink-600 font-mono">{s.ip}</td>
-                      <td className="px-6 py-3 text-[13px] text-ink-600">{s.location}</td>
-                      <td className="px-6 py-3 text-[13px] text-ink-500">{s.inicio}</td>
-                      <td className="px-6 py-3 text-[13px] text-ink-500">{s.lastActivity}</td>
-                      <td className="px-6 py-3">
-                        {!s.current && (
-                          <button
-                            onClick={() => handleTerminateSession(s.id)}
-                            className="flex h-7 w-7 items-center justify-center rounded-full border border-red-200 text-red-500 hover:bg-red-50 transition"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="border-t border-[rgba(17,17,16,0.06)] px-6 py-3">
-              <p className="text-xs text-ink-400">La sesión actual no se puede cerrar desde aquí. Usa el botón de Cerrar sesión.</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MFA Modal */}
-      <AnimatePresence>
-        {mfaModalOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" style={{ background: "rgba(17,17,16,0.45)", backdropFilter: "blur(6px)" }}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/70 backdrop-blur-md shadow-float p-6 space-y-5"
-            >
-              {mfaStep === 1 && (
-                <>
-                  <div className="text-center space-y-2">
-                    <p className="text-lg font-bold text-ink-900">Escanea el código QR</p>
-                    <p className="text-sm text-ink-500">Usa Google Authenticator o cualquier app TOTP</p>
-                  </div>
-                  <div className="flex justify-center">
-                    <div className="w-40 h-40 border-2 border-[rgba(17,17,16,0.08)] rounded-2xl flex items-center justify-center bg-[rgba(17,17,16,0.025)]">
-                      <span className="text-xs text-ink-400 text-center leading-relaxed px-2">QR Code — Escanea con{'\n'}Google Authenticator</span>
+        {tab === 'seguridad' ? (
+          <div className="space-y-6">
+            <div className="rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/70 p-6 shadow-card backdrop-blur-sm">
+              <p className="font-bold text-ink-900">Cambiar contrasena</p>
+              <div className="mt-4 space-y-4">
+                {renderPasswordInput('Contrasena actual', currentPwd, setCurrentPwd, showCurrentPwd, () => setShowCurrentPwd((value) => !value))}
+                {renderPasswordInput('Nueva contrasena', newPwd, setNewPwd, showNewPwd, () => setShowNewPwd((value) => !value))}
+                {newPwd ? (
+                  <div className="space-y-1">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-[rgba(17,17,16,0.06)]">
+                      <div className={`h-1.5 rounded-full transition-all ${pwdStrength.color}`} style={{ width: pwdStrength.width }} />
                     </div>
+                    <p className="text-xs text-ink-500">
+                      Seguridad: <span className="font-semibold">{pwdStrength.label}</span>
+                    </p>
                   </div>
-                  <p className="text-xs text-ink-500 text-center">
-                    O ingresa este código manualmente: <span className="font-mono font-semibold text-ink-900">COMF-GUAJ-MFA-2026</span>
-                  </p>
-                  <div className="flex gap-2">
-                    <button onClick={() => setMfaModalOpen(false)} className="flex-1 rounded-full border border-[rgba(17,17,16,0.12)] bg-[rgba(255,255,255,0.75)] py-2.5 text-[13px] font-semibold text-ink-700 hover:bg-white transition">
-                      Cancelar
-                    </button>
-                    <button onClick={handleActivateMfa} className="flex-1 rounded-full bg-brand-500 py-2.5 text-[13px] font-semibold text-white hover:bg-brand-500 transition shadow-card">
-                      Continuar
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {mfaStep === 2 && (
-                <>
-                  <div className="text-center space-y-2">
-                    <p className="text-lg font-bold text-ink-900">Ingresa el código</p>
-                    <p className="text-sm text-ink-500">Introduce el código de 6 dígitos de tu app</p>
-                  </div>
-                  <div className="flex justify-center gap-2">
-                    {Array.from({ length: 6 }, (_, i) => i).map((i) => (
-                      <input
-                        key={i}
-                        ref={(el) => { mfaInputRefs.current[i] = el; }}
-                        type="text"
-                        maxLength={1}
-                        className="h-12 w-10 rounded-2xl border-2 border-[rgba(17,17,16,0.10)] bg-white/80 text-center text-lg font-bold text-ink-900 focus:border-brand-400 focus:outline-none transition"
-                        value={mfaCode[i]}
-                        onChange={(e) => handleMfaCodeInput(i, e.target.value)}
-                        onKeyDown={(e) => handleMfaCodeKeyDown(i, e)}
-                      />
-                    ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => setMfaModalOpen(false)} className="flex-1 rounded-full border border-[rgba(17,17,16,0.12)] bg-[rgba(255,255,255,0.75)] py-2.5 text-[13px] font-semibold text-ink-700 hover:bg-white transition">
-                      Cancelar
-                    </button>
-                    <button onClick={handleActivateMfa} className="flex-1 rounded-full bg-brand-500 py-2.5 text-[13px] font-semibold text-white hover:bg-brand-500 transition shadow-card">
-                      Verificar
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {mfaStep === 3 && (
-                <div className="text-center space-y-4 py-4">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                    className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100"
-                  >
-                    <Check className="text-emerald-600" size={32} />
-                  </motion.div>
-                  <p className="text-lg font-bold text-emerald-700">MFA activado</p>
-                  <p className="text-sm text-ink-500">Tu cuenta ahora está protegida con autenticación de dos factores.</p>
-                </div>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Confirm close all sessions dialog */}
-      <AnimatePresence>
-        {confirmCloseAll && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" style={{ background: "rgba(17,17,16,0.45)", backdropFilter: "blur(6px)" }}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/70 backdrop-blur-md shadow-float p-6 space-y-4"
-            >
-              <p className="font-bold text-ink-900">¿Cerrar todas las demás sesiones?</p>
-              <p className="text-sm text-ink-500">Se cerrarán todas las sesiones activas excepto la actual.</p>
-              <div className="flex gap-2">
-                <button onClick={() => setConfirmCloseAll(false)} className="flex-1 rounded-full border border-[rgba(17,17,16,0.12)] bg-[rgba(255,255,255,0.75)] py-2.5 text-[13px] font-semibold text-ink-700 hover:bg-white transition">
-                  Cancelar
-                </button>
-                <button onClick={handleCloseAllSessions} className="flex-1 rounded-full bg-red-600 py-2.5 text-[13px] font-semibold text-white hover:bg-red-700 transition">
-                  Cerrar sesiones
+                ) : null}
+                {renderPasswordInput('Confirmar contrasena', confirmPwd, setConfirmPwd, showConfirmPwd, () => setShowConfirmPwd((value) => !value))}
+                <button
+                  onClick={() => void handleChangePassword()}
+                  disabled={changingPassword}
+                  className="rounded-full bg-brand-500 px-6 py-2.5 text-[13px] font-semibold text-white shadow-card disabled:opacity-60"
+                >
+                  {changingPassword ? 'Actualizando...' : 'Cambiar contrasena'}
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </div>
+
+            <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6">
+              <div className="flex items-start gap-3">
+                <ShieldOff className="mt-0.5 shrink-0 text-amber-600" size={18} />
+                <div>
+                  <p className="font-semibold text-amber-900">MFA/TOTP aun no esta implementado de forma real</p>
+                  <p className="mt-1 text-sm text-amber-800">
+                    La version anterior simulaba activacion de MFA solo en frontend. Eso era inseguro y enganoso. Hasta tener soporte backend, recovery codes y verificacion real, no se expone como accion operativa.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {tab === 'sesiones' ? (
+          <div className="space-y-4">
+            <div className="rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/70 shadow-card backdrop-blur-sm">
+              <div className="border-b border-[rgba(17,17,16,0.06)] px-6 py-4">
+                <p className="font-bold text-ink-900">Sesiones activas</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[rgba(17,17,16,0.06)] text-left text-xs font-semibold text-ink-500">
+                      <th className="px-6 py-3">Dispositivo</th>
+                      <th className="px-6 py-3">IP</th>
+                      <th className="px-6 py-3">Ubicacion</th>
+                      <th className="px-6 py-3">Inicio</th>
+                      <th className="px-6 py-3">Ultima actividad</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sessions.map((session) => (
+                      <tr key={session.id} className="border-b border-[rgba(17,17,16,0.04)] bg-emerald-50">
+                        <td className="px-6 py-3">
+                          <div className="flex items-center gap-2">
+                            <Smartphone size={14} className="text-ink-400" />
+                            <span className="text-[13px] text-ink-900">{session.device}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-3 text-[13px] font-mono text-ink-600">{session.ip}</td>
+                        <td className="px-6 py-3 text-[13px] text-ink-600">{session.location}</td>
+                        <td className="px-6 py-3 text-[13px] text-ink-500">{session.inicio}</td>
+                        <td className="px-6 py-3 text-[13px] text-ink-500">{session.lastActivity}</td>
+                      </tr>
+                    ))}
+                    {sessions.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-8 text-sm text-ink-400">
+                          No hay informacion de sesiones disponible.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+              <div className="border-t border-[rgba(17,17,16,0.06)] px-6 py-4">
+                <div className="flex items-start gap-2 text-sm text-ink-500">
+                  <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-500" />
+                  <p>El backend todavia no expone inventario ni revocacion de sesiones remotas. Solo mostramos la sesion actual mientras se implementa soporte real.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/70 p-6 shadow-card backdrop-blur-sm">
+              <div className="flex items-start gap-3">
+                <Monitor className="mt-0.5 shrink-0 text-ink-400" size={18} />
+                <div>
+                  <p className="font-semibold text-ink-900">Dispositivos confiables</p>
+                  <p className="mt-1 text-sm text-ink-500">
+                    Esta capacidad tambien requiere backend: huellas de dispositivo, expiracion, revocacion y auditoria. Hoy no hay soporte real, por lo tanto no la simulamos.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

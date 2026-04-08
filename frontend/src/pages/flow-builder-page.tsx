@@ -36,6 +36,7 @@ type FlowNodeType =
   | 'tag'
   | 'media'
   | 'escalate'
+  | 'ai_reply'
   | 'end';
 
 interface FlowNode {
@@ -51,6 +52,13 @@ interface FlowNode {
   mediaType?: 'image' | 'pdf' | 'video';
   mediaUrl?: string;
   tagValue?: string;
+  // Condition node
+  operator?: string;
+  conditionValue?: string;
+  // Collect node
+  inputType?: 'text' | 'number' | 'email' | 'phone' | 'option';
+  // Escalate node
+  reason?: string;
   x: number;
   y: number;
 }
@@ -80,6 +88,54 @@ interface Flow {
   createdAt: string;
 }
 
+function backendNodeToUi(n: Record<string, unknown>, index: number): FlowNode {
+  const TIPO_MAP: Record<string, FlowNodeType> = { question: 'collect', action: 'api' };
+  const tipo = (TIPO_MAP[(n.tipo as string)] ?? (n.tipo as string)) as FlowNodeType;
+  const d = (n.data as Record<string, unknown>) ?? {};
+
+  // Unpack nested data fields into flat FlowNode fields
+  const contenido = (d.text ?? d.message ?? n.contenido ?? '') as string;
+  const opciones = (d.options ?? n.opciones ?? []) as string[];
+  const variable = (d.variable ?? n.variable ?? '') as string;
+  const pregunta = (d.text ?? n.pregunta ?? '') as string;
+  const endpoint = ((d.payload as Record<string, unknown>)?.url ?? n.endpoint ?? '') as string;
+  const delayMs = (d.delayMs ?? n.delayMs) as number | undefined;
+  const mediaType = (d.mediaType ?? n.mediaType) as FlowNode['mediaType'];
+  const mediaUrl = (d.mediaUrl ?? n.mediaUrl ?? '') as string;
+  const tagValue = (d.tagValue ?? n.tagValue ?? '') as string;
+  const operator = (d.operator ?? n.operator ?? 'eq') as string;
+  const conditionValue = (d.value ?? n.conditionValue ?? '') as string;
+  const reason = (d.reason ?? n.reason ?? '') as string;
+
+  // Generate a display label from existing label or infer from content
+  const fallbackLabel = NODE_TYPE_LABELS[tipo] ?? tipo;
+  const label = ((n.label as string) || (contenido ? contenido.slice(0, 24) : '') || fallbackLabel) as string;
+
+  // Auto-assign canvas position if missing
+  const x = typeof n.x === 'number' && isFinite(n.x) ? (n.x as number) : 210;
+  const y = typeof n.y === 'number' && isFinite(n.y) ? (n.y as number) : 40 + index * 120;
+
+  return {
+    id: n.id as string,
+    tipo,
+    label,
+    contenido: contenido || undefined,
+    opciones: opciones.length ? opciones : undefined,
+    variable: variable || undefined,
+    pregunta: pregunta || undefined,
+    endpoint: endpoint || undefined,
+    delayMs,
+    mediaType,
+    mediaUrl: mediaUrl || undefined,
+    tagValue: tagValue || undefined,
+    operator,
+    conditionValue: conditionValue || undefined,
+    reason: reason || undefined,
+    x,
+    y,
+  };
+}
+
 function mapApiFlowToUi(flow: FlowApiItem): Flow {
   return {
     id: flow.id,
@@ -94,18 +150,57 @@ function mapApiFlowToUi(flow: FlowApiItem): Flow {
       confidenceThreshold: flow.router_config?.confidenceThreshold ?? 0.8,
       fallbackAction: (flow.router_config?.fallbackAction as Flow['routerConfig']['fallbackAction']) ?? 'request_clarification',
     },
-    nodes: (flow.nodes as unknown as FlowNode[]) ?? [],
+    nodes: ((flow.nodes ?? []) as unknown as Record<string, unknown>[]).map(backendNodeToUi),
     edges: (flow.edges as unknown as FlowEdge[]) ?? [],
     createdAt: flow.created_at,
   };
+}
+
+function nodeToBackend(node: FlowNode): Record<string, unknown> {
+  const base = { id: node.id, tipo: node.tipo, label: node.label, x: node.x, y: node.y };
+  switch (node.tipo) {
+    case 'message':
+      return { ...base, data: { text: node.contenido ?? '' } };
+    case 'quickReply':
+      return { ...base, data: { text: node.contenido ?? '', options: node.opciones ?? [] } };
+    case 'collect':
+      return { ...base, data: { text: node.pregunta ?? '', variable: node.variable ?? '', input_type: node.inputType ?? 'text' } };
+    case 'condition':
+      return { ...base, data: { variable: node.variable ?? '', operator: node.operator ?? 'eq', value: node.conditionValue ?? '' } };
+    case 'api':
+      return { ...base, data: { action_type: 'webhook', payload: { url: node.endpoint ?? '' } } };
+    case 'delay':
+      return { ...base, data: { delayMs: node.delayMs ?? 3000 } };
+    case 'media':
+      return { ...base, data: { mediaType: node.mediaType ?? 'image', mediaUrl: node.mediaUrl ?? '' } };
+    case 'tag':
+      return { ...base, data: { tagValue: node.tagValue ?? '' } };
+    case 'escalate':
+      return { ...base, data: { text: node.contenido ?? '', reason: node.reason ?? 'flow_escalation' } };
+    case 'end':
+      return { ...base, data: { message: node.contenido ?? '' } };
+    default:
+      return { ...base, data: {} };
+  }
+}
+
+function edgeToBackend(edge: FlowEdge): Record<string, unknown> {
+  let condition = 'default';
+  if (edge.label) {
+    const lower = edge.label.toLowerCase().trim();
+    if (lower === 'si' || lower === 'yes') condition = 'yes';
+    else if (lower === 'no') condition = 'no';
+    else condition = `option:${edge.label}`;
+  }
+  return { id: edge.id, source: edge.source, target: edge.target, data: { condition } };
 }
 
 function mapUiFlowToPayload(flow: Flow): FlowPayload {
   return {
     name: flow.nombre,
     description: flow.descripcion,
-    nodes: flow.nodes as unknown as Record<string, unknown>[],
-    edges: flow.edges as unknown as Record<string, unknown>[],
+    nodes: flow.nodes.map(nodeToBackend),
+    edges: flow.edges.map(edgeToBackend),
     is_active: flow.activo,
     trigger: flow.routerConfig.intent,
     channel: flow.canales[0] ?? 'whatsapp',
@@ -122,17 +217,6 @@ function mapUiFlowToPayload(flow: Flow): FlowPayload {
 
 const EXTERNAL_DATABASE_LOOKUP_ENDPOINT = '/api/channels/database/lookup-affiliate/';
 
-const ROUTER_INTENT_OPTIONS = [
-  'check_subsidy',
-  'request_certificate',
-  'book_appointment',
-  'buy_intent',
-  'complaint',
-  'support_request',
-  'campaign_response',
-  'unknown',
-] as const;
-
 const CHANNEL_OPTIONS: Array<{ id: 'web' | 'whatsapp' | 'instagram' | 'tiktok' | 'app-chat'; label: string; className: string }> = [
   { id: 'web', label: 'Web', className: 'bg-blue-100 text-blue-700' },
   { id: 'whatsapp', label: 'WhatsApp', className: 'bg-emerald-100 text-emerald-700' },
@@ -140,6 +224,7 @@ const CHANNEL_OPTIONS: Array<{ id: 'web' | 'whatsapp' | 'instagram' | 'tiktok' |
   { id: 'tiktok', label: 'TikTok', className: 'bg-[rgba(17,17,16,0.06)] text-ink-700' },
   { id: 'app-chat', label: 'App Chat', className: 'bg-violet-100 text-violet-700' },
 ];
+void CHANNEL_OPTIONS;
 
 const NODE_CONFIG: Record<FlowNodeType, { color: string; bg: string; border: string; icon: React.ReactNode; shape: 'circle' | 'rect' | 'diamond' }> = {
   start: { color: 'text-emerald-700', bg: 'bg-emerald-100', border: 'border-emerald-300', icon: <Play size={14} />, shape: 'circle' },
@@ -152,13 +237,92 @@ const NODE_CONFIG: Record<FlowNodeType, { color: string; bg: string; border: str
   media: { color: 'text-fuchsia-700', bg: 'bg-fuchsia-100', border: 'border-fuchsia-300', icon: <ImageIcon size={14} />, shape: 'rect' },
   tag: { color: 'text-teal-700', bg: 'bg-teal-100', border: 'border-teal-300', icon: <Tags size={14} />, shape: 'rect' },
   escalate: { color: 'text-red-700', bg: 'bg-red-100', border: 'border-red-300', icon: <ArrowUpRight size={14} />, shape: 'rect' },
+  ai_reply: { color: 'text-violet-700', bg: 'bg-violet-100', border: 'border-violet-300', icon: <Sparkles size={14} />, shape: 'rect' },
   end: { color: 'text-ink-600', bg: 'bg-[rgba(17,17,16,0.06)]', border: 'border-[rgba(17,17,16,0.12)]', icon: <Square size={14} />, shape: 'circle' },
 };
 
-const NODE_TYPES_LIST: FlowNodeType[] = ['message', 'quickReply', 'collect', 'condition', 'api', 'delay', 'media', 'tag', 'escalate', 'end'];
+const NODE_TYPE_LABELS: Record<FlowNodeType, string> = {
+  start: 'Inicio',
+  message: 'Mensaje',
+  quickReply: 'Resp. rápida',
+  collect: 'Recoger dato',
+  condition: 'Condición',
+  api: 'API',
+  delay: 'Pausa',
+  media: 'Media',
+  tag: 'Etiquetar',
+  escalate: 'Escalar',
+  ai_reply: 'IA',
+  end: 'Fin',
+};
+
 const NODE_WIDTH = 180;
 const NODE_HEIGHT = 72;
-const CANVAS_W = 600;
+const CANVAS_W = 780;
+
+/** Apply auto-layout to a Flow's nodes. Pure function — returns new nodes array. */
+function autoLayoutNodes(nodes: FlowNode[], edges: FlowEdge[]): FlowNode[] {
+  const V_GAP = 110;
+  const H_GAP = 36;
+  const TOP_PAD = 48;
+
+  const visibleNodes = nodes.filter((n) => String(n.tipo) !== '__meta__');
+  if (visibleNodes.length === 0) return nodes;
+  const visibleIds = new Set(visibleNodes.map((n) => n.id));
+
+  const outEdges = new Map<string, Array<{ target: string; label?: string }>>();
+  visibleNodes.forEach((n) => outEdges.set(n.id, []));
+  edges.forEach((e) => {
+    if (!visibleIds.has(e.source) || !visibleIds.has(e.target)) return;
+    outEdges.get(e.source)!.push({ target: e.target, label: e.label });
+  });
+  outEdges.forEach((list) => {
+    list.sort((a, b) => {
+      const order = (l?: string) => { const s = (l ?? '').toLowerCase(); if (s === 'si' || s === 'yes') return 0; if (s === 'no') return 2; return 1; };
+      return order(a.label) - order(b.label);
+    });
+  });
+
+  const rank = new Map<string, number>();
+  const startNode = visibleNodes.find((n) => n.tipo === 'start') ?? visibleNodes[0];
+  const queue: Array<{ id: string; r: number }> = [{ id: startNode.id, r: 0 }];
+  rank.set(startNode.id, 0);
+  while (queue.length > 0) {
+    const { id, r } = queue.shift()!;
+    for (const { target } of outEdges.get(id) ?? []) {
+      const newR = r + 1;
+      if (!rank.has(target) || rank.get(target)! < newR) { rank.set(target, newR); queue.push({ id: target, r: newR }); }
+    }
+  }
+  let maxRank = Math.max(0, ...rank.values());
+  visibleNodes.forEach((n) => { if (!rank.has(n.id)) rank.set(n.id, ++maxRank); });
+
+  const byRank = new Map<number, string[]>();
+  rank.forEach((r, id) => { if (!byRank.has(r)) byRank.set(r, []); byRank.get(r)!.push(id); });
+
+  const parentOrder = new Map<string, number>();
+  parentOrder.set(startNode.id, 0);
+  Array.from(byRank.entries()).sort((a, b) => a[0] - b[0]).forEach(([, ids]) => {
+    ids.sort((a, b) => (parentOrder.get(a) ?? 999) - (parentOrder.get(b) ?? 999));
+    ids.forEach((id, i) => {
+      (outEdges.get(id) ?? []).forEach(({ target }, j) => {
+        if (!parentOrder.has(target)) parentOrder.set(target, i * 100 + j);
+      });
+    });
+  });
+
+  const xPos = new Map<string, number>();
+  const yPos = new Map<string, number>();
+  Array.from(byRank.entries()).sort((a, b) => a[0] - b[0]).forEach(([r, ids]) => {
+    const totalW = ids.length * NODE_WIDTH + (ids.length - 1) * H_GAP;
+    const startX = Math.max(16, Math.round((CANVAS_W - totalW) / 2));
+    ids.forEach((id, i) => { xPos.set(id, startX + i * (NODE_WIDTH + H_GAP)); yPos.set(id, TOP_PAD + r * (NODE_HEIGHT + V_GAP)); });
+  });
+
+  return nodes.map((n) =>
+    xPos.has(n.id) ? { ...n, x: xPos.get(n.id)!, y: yPos.get(n.id)! } : n
+  );
+}
 
 // Calculate node center for edge drawing
 function nodeCenter(node: FlowNode) {
@@ -431,12 +595,249 @@ function SimulationModal({ flow, onClose }: { flow: Flow; onClose: () => void })
   );
 }
 
+function CustomIntentsModal({
+  intents,
+  onClose,
+  onCreated,
+  onDeleted,
+}: {
+  intents: { id: string | null; value: string; label: string; is_custom: boolean; keywords?: string[] }[];
+  onClose: () => void;
+  onCreated: (intent: { id: string; value: string; label: string; is_custom: boolean; keywords: string[] }) => void;
+  onDeleted: (id: string) => void;
+}) {
+  const { showError, showSuccess } = useNotification();
+  const [label, setLabel] = useState('');
+  const [keywords, setKeywords] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const customIntents = intents.filter((i) => i.is_custom);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    const trimLabel = label.trim();
+    if (!trimLabel) return;
+    const kws = keywords.split(',').map((k) => k.trim()).filter(Boolean);
+    if (kws.length === 0) return;
+    setSaving(true);
+    try {
+      const name = trimLabel.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      const created = await api.createCustomIntent({ name, label: trimLabel, keywords: kws });
+      onCreated(created);
+      setLabel('');
+      setKeywords('');
+      showSuccess('Intención creada');
+    } catch {
+      showError('Intenciones', 'No se pudo crear la intención');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      await api.deleteCustomIntent(id);
+      onDeleted(id);
+      showSuccess('Intención eliminada');
+    } catch {
+      showError('Intenciones', 'No se pudo eliminar');
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(17,17,16,0.45)', backdropFilter: 'blur(6px)' }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+        className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl"
+      >
+        <div className="flex items-center justify-between border-b border-[rgba(17,17,16,0.07)] px-6 py-4">
+          <div>
+            <h2 className="text-base font-bold text-ink-900">Mis intenciones</h2>
+            <p className="mt-0.5 text-[12px] text-ink-400">Define intenciones propias de tu negocio con palabras clave.</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-[rgba(17,17,16,0.06)] transition">
+            <X size={15} className="text-ink-400" />
+          </button>
+        </div>
+
+        <div className="max-h-[60vh] overflow-y-auto">
+          {/* Existing custom intents */}
+          {customIntents.length > 0 && (
+            <div className="divide-y divide-[rgba(17,17,16,0.05)] border-b border-[rgba(17,17,16,0.07)]">
+              {customIntents.map((ci) => (
+                <div key={ci.id} className="flex items-start justify-between gap-3 px-6 py-3.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-ink-800">{ci.label}</p>
+                      <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-600 ring-1 ring-brand-100">personalizada</span>
+                    </div>
+                    <p className="mt-0.5 font-mono text-[11px] text-ink-400">{ci.value}</p>
+                    {ci.keywords && ci.keywords.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {ci.keywords.map((kw) => (
+                          <span key={kw} className="rounded-full bg-[rgba(17,17,16,0.05)] px-2 py-0.5 text-[10px] text-ink-600">{kw}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => ci.id && void handleDelete(ci.id)}
+                    className="mt-0.5 shrink-0 rounded-lg p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-500 transition"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Create new */}
+          <form onSubmit={(e) => void handleCreate(e)} className="space-y-4 px-6 py-5">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-ink-300">Nueva intención</p>
+            <div>
+              <label className="mb-1.5 block text-[12px] font-semibold text-ink-700">Nombre visible</label>
+              <input
+                type="text" value={label} onChange={(e) => setLabel(e.target.value)}
+                placeholder="ej. Solicitar cotización, Consulta de garantía"
+                className="w-full rounded-xl border border-[rgba(17,17,16,0.12)] px-4 py-2.5 text-sm text-ink-800 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+              />
+              {label.trim() && (
+                <p className="mt-1 font-mono text-[10px] text-ink-400">
+                  slug: {label.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[12px] font-semibold text-ink-700">
+                Palabras clave <span className="font-normal text-ink-400">(separadas por coma)</span>
+              </label>
+              <input
+                type="text" value={keywords} onChange={(e) => setKeywords(e.target.value)}
+                placeholder="cotización, quiero cotizar, cuánto cuesta un pedido"
+                className="w-full rounded-xl border border-[rgba(17,17,16,0.12)] px-4 py-2.5 text-sm text-ink-800 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+              />
+              <p className="mt-1 text-[11px] text-ink-400">Cuando el cliente escriba alguna de estas frases, se activa esta intención.</p>
+            </div>
+            <button
+              type="submit" disabled={saving || !label.trim() || !keywords.trim()}
+              className="w-full rounded-xl bg-brand-500 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-40"
+            >
+              {saving ? 'Guardando...' : 'Crear intención'}
+            </button>
+          </form>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function NewFlowModal({
+  intents,
+  onClose,
+  onCreate,
+}: {
+  intents: { value: string; label: string }[];
+  onClose: () => void;
+  onCreate: (nombre: string, descripcion: string) => void;
+}) {
+  const [nombre, setNombre] = useState('');
+  const [descripcion, setDescripcion] = useState('');
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    onCreate(nombre.trim() || 'Nuevo flujo', descripcion.trim());
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(17,17,16,0.45)', backdropFilter: 'blur(6px)' }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+        className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+      >
+        <div className="border-b border-[rgba(17,17,16,0.07)] px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold text-ink-900">Nuevo flujo</h2>
+              <p className="mt-0.5 text-[12px] text-ink-400">El agente ejecutará este flujo cuando detecte la intención correcta.</p>
+            </div>
+            <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-[rgba(17,17,16,0.06)] transition">
+              <X size={15} className="text-ink-400" />
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5 px-6 py-5">
+          <div>
+            <label className="mb-1.5 block text-[12px] font-semibold text-ink-700">
+              Nombre del flujo <span className="text-brand-500">*</span>
+            </label>
+            <input
+              autoFocus
+              type="text"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              placeholder="ej. Consulta de pedido, Agendar cita, Onboarding"
+              className="w-full rounded-xl border border-[rgba(17,17,16,0.12)] px-4 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+            />
+            <p className="mt-1 text-[11px] text-ink-400">Ponle un nombre claro que describa qué resuelve este flujo.</p>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-[12px] font-semibold text-ink-700">Descripción <span className="text-ink-300">(opcional)</span></label>
+            <textarea
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              rows={2}
+              placeholder="ej. Guía al cliente para verificar el estado de su pedido sin necesidad de un agente humano."
+              className="w-full resize-none rounded-xl border border-[rgba(17,17,16,0.12)] px-4 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100 placeholder:text-ink-300"
+            />
+          </div>
+
+          {intents.length > 0 && (
+            <div className="rounded-xl border border-brand-100 bg-brand-50/60 px-4 py-3 text-[12px] text-brand-800">
+              <p className="font-semibold">¿Cuándo se activa este flujo?</p>
+              <p className="mt-0.5 text-brand-700">El AI Router lo activará automáticamente cuando detecte la intención que configures en el paso siguiente. El cliente no sabrá que está siguiendo un flujo.</p>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose}
+              className="flex-1 rounded-xl border border-[rgba(17,17,16,0.1)] py-2.5 text-sm font-semibold text-ink-600 transition hover:bg-[rgba(17,17,16,0.03)]"
+            >
+              Cancelar
+            </button>
+            <button type="submit"
+              className="flex-1 rounded-xl bg-brand-500 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-600"
+            >
+              Crear flujo
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 export function FlowBuilderPage() {
   const { showError, showSuccess, showInfo } = useNotification();
   const [flows, setFlows] = useState<Flow[]>([]);
   const [activeFlowId, setActiveFlowId] = useState(flows[0]?.id ?? '');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savingFlow, setSavingFlow] = useState(false);
+  const [intents, setIntents] = useState<{ id: string | null; value: string; label: string; is_custom: boolean; keywords?: string[] }[]>([]);
+  const [showIntentsModal, setShowIntentsModal] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<'flows' | 'settings'>('flows');
+  const [showNewFlowModal, setShowNewFlowModal] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [showSimulation, setShowSimulation] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -451,34 +852,34 @@ export function FlowBuilderPage() {
 
   const activeFlow = flows.find((f) => f.id === activeFlowId) ?? flows[0];
   const selectedNode = activeFlow?.nodes.find((n) => n.id === selectedNodeId) ?? null;
-  const routerPreview = activeFlow
-    ? {
-        intent: activeFlow.routerConfig.intent,
-        confidence: activeFlow.routerConfig.confidenceThreshold,
-        risk_level: 'low',
-        policy_status: 'allowed',
-        route: 'trigger_flow',
-        target: activeFlow.id,
-        flow_name: activeFlow.nombre,
-        channel_scope: activeFlow.canales,
-        trigger_type: activeFlow.routerConfig.triggerType,
-        keywords: activeFlow.routerConfig.keywords,
-        fallback_action: activeFlow.routerConfig.fallbackAction,
-        final_action: 'start_flow',
-      }
-    : null;
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadFlows() {
       try {
-        const data = await api.getFlows();
+        const [flowData, intentData] = await Promise.allSettled([
+          api.getFlows(),
+          api.getFlowIntents(),
+        ]);
         if (cancelled) return;
-        const mapped = data.map(mapApiFlowToUi);
-        setFlows(mapped);
-        setActiveFlowId(mapped[0]?.id ?? '');
-        setLoadError(null);
+        if (flowData.status === 'fulfilled') {
+          const mapped = flowData.value.map((f) => {
+            const ui = mapApiFlowToUi(f);
+            // Auto-layout flows loaded from DB (nodes have no saved canvas positions)
+            return { ...ui, nodes: autoLayoutNodes(ui.nodes, ui.edges) };
+          });
+          setFlows(mapped);
+          setActiveFlowId(mapped[0]?.id ?? '');
+          setLoadError(null);
+        } else {
+          setFlows([]);
+          setActiveFlowId('');
+          setLoadError(flowData.reason instanceof Error ? flowData.reason.message : 'No se pudieron cargar los flujos');
+        }
+        if (intentData.status === 'fulfilled') {
+          setIntents(intentData.value);
+        }
       } catch (error) {
         if (cancelled) return;
         setFlows([]);
@@ -535,10 +936,20 @@ export function FlowBuilderPage() {
   }
 
   function handleNewFlow() {
-    const f: Flow = createBlankFlow(String(Date.now()));
+    setShowNewFlowModal(true);
+  }
+
+  function handleCreateFlow(nombre: string, descripcion: string) {
+    const f: Flow = {
+      ...createBlankFlow(String(Date.now())),
+      nombre,
+      descripcion,
+    };
     setFlows((prev) => [...prev, f]);
     setActiveFlowId(f.id);
-    showSuccess('Nuevo flujo creado');
+    setShowNewFlowModal(false);
+    setSidebarTab('settings');
+    showSuccess('Flujo creado');
   }
 
   async function handleSaveFlow() {
@@ -673,6 +1084,7 @@ export function FlowBuilderPage() {
       showInfo('No se pudo copiar automáticamente');
     });
   }
+  void handleExportJSON;
 
   function handleAddNodeType(tipo: FlowNodeType) {
     if (!activeFlow) return;
@@ -684,18 +1096,7 @@ export function FlowBuilderPage() {
     const newNode: FlowNode = {
       id: nodeId,
       tipo,
-      label:
-        tipo === 'quickReply'
-          ? 'Opciones'
-          : tipo === 'message'
-            ? 'Mensaje'
-            : tipo === 'delay'
-              ? 'Espera'
-              : tipo === 'media'
-                ? 'Media'
-                : tipo === 'tag'
-                  ? 'Tag'
-                  : tipo,
+      label: NODE_TYPE_LABELS[tipo],
       x: 210,
       y: Math.max(40, maxY - 140),
       delayMs: tipo === 'delay' ? 3000 : undefined,
@@ -744,16 +1145,6 @@ export function FlowBuilderPage() {
     return activeFlow?.nodes.find((node) => node.id === nodeId)?.label ?? nodeId;
   }
 
-  function toggleFlowChannel(channelId: Flow['canales'][number]) {
-    if (!activeFlow) return;
-    const current = activeFlow.canales ?? [];
-    let next = current.includes(channelId)
-      ? current.filter((c) => c !== channelId)
-      : [...current, channelId];
-    if (next.length === 0) next = ['whatsapp'];
-    setFlows((prev) => prev.map((f) => (f.id === activeFlowId ? { ...f, canales: next as Flow['canales'] } : f)));
-  }
-
   function applyZoom(nextZoom: number) {
     setZoom(Math.max(0.5, Math.min(1.8, Number(nextZoom.toFixed(2)))));
   }
@@ -767,76 +1158,13 @@ export function FlowBuilderPage() {
 
   function handleAutoLayout() {
     if (!activeFlow) return;
-    const nodeMap = new Map(activeFlow.nodes.map((node) => [node.id, node]));
-    const indegree = new Map<string, number>(activeFlow.nodes.map((node) => [node.id, 0]));
-    const outgoing = new Map<string, string[]>();
-
-    activeFlow.edges.forEach((edge) => {
-      if (!nodeMap.has(edge.source) || !nodeMap.has(edge.target)) return;
-      indegree.set(edge.target, (indegree.get(edge.target) ?? 0) + 1);
-      outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge.target]);
-    });
-
-    const roots = activeFlow.nodes
-      .filter((node) => (indegree.get(node.id) ?? 0) === 0)
-      .map((node) => node.id);
-    const queue = roots.length > 0 ? [...roots] : [activeFlow.nodes[0]?.id].filter(Boolean) as string[];
-    const depth = new Map<string, number>();
-
-    queue.forEach((nodeId) => depth.set(nodeId, 0));
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      const currentDepth = depth.get(current) ?? 0;
-      (outgoing.get(current) ?? []).forEach((targetId) => {
-        const nextDepth = currentDepth + 1;
-        if (!depth.has(targetId) || nextDepth > (depth.get(targetId) ?? 0)) {
-          depth.set(targetId, nextDepth);
-          queue.push(targetId);
-        }
-      });
-    }
-
-    let fallbackDepth = Math.max(0, ...Array.from(depth.values()));
-    activeFlow.nodes.forEach((node) => {
-      if (!depth.has(node.id)) {
-        fallbackDepth += 1;
-        depth.set(node.id, fallbackDepth);
-      }
-    });
-
-    const levels = new Map<number, FlowNode[]>();
-    activeFlow.nodes.forEach((node) => {
-      const d = depth.get(node.id) ?? 0;
-      levels.set(d, [...(levels.get(d) ?? []), node]);
-    });
-
-    const horizontalGap = 44;
-    const verticalGap = 62;
-    const topPadding = 32;
-    const updatedById = new Map<string, FlowNode>();
-
-    Array.from(levels.entries())
-      .sort((a, b) => a[0] - b[0])
-      .forEach(([level, nodes]) => {
-        const totalWidth = nodes.length * NODE_WIDTH + Math.max(0, nodes.length - 1) * horizontalGap;
-        const startX = Math.max(8, Math.floor((CANVAS_W - totalWidth) / 2));
-        nodes.forEach((node, index) => {
-          updatedById.set(node.id, {
-            ...node,
-            x: startX + index * (NODE_WIDTH + horizontalGap),
-            y: topPadding + level * (NODE_HEIGHT + verticalGap),
-          });
-        });
-      });
-
     setFlows((prev) =>
       prev.map((flow) =>
-        flow.id === activeFlowId
-          ? { ...flow, nodes: flow.nodes.map((node) => updatedById.get(node.id) ?? node) }
-          : flow
+        flow.id !== activeFlowId ? flow
+          : { ...flow, nodes: autoLayoutNodes(flow.nodes, flow.edges) }
       )
     );
-    showSuccess('Layout ordenado automaticamente');
+    showSuccess('Layout ordenado');
   }
 
   function handleDeleteSelectedNode() {
@@ -886,27 +1214,28 @@ export function FlowBuilderPage() {
     return (
       <div className="page-shell">
         <div className="page-stack">
-        <div className="page-header-card">
-          <h1 className="page-title">Flujos</h1>
-          <p className="page-description">
-            Diseña flujos operativos, configura su disparador del router y mantenlos listos para ejecución real.
-          </p>
-        </div>
-        <div className="rounded-2xl border border-dashed border-[rgba(17,17,16,0.09)] bg-white/70 backdrop-blur-sm p-8 text-center shadow-card">
-          <h2 className="text-lg font-bold text-ink-900">No hay flujos creados</h2>
-          <p className="mx-auto mt-2 max-w-2xl text-sm text-ink-400">
-            Esta cuenta arranca sin flujos precargados. Crea uno nuevo para empezar.
-          </p>
-          <div className="mt-4 flex items-center justify-center gap-2">
+          <div className="page-header-card">
+            <h1 className="page-title">Flujos</h1>
+            <p className="page-description">Construye conversaciones estructuradas que el AI Router activa según la intención del cliente.</p>
+          </div>
+          <div className="flex flex-col items-center justify-center gap-5 rounded-2xl border border-dashed border-[rgba(17,17,16,0.09)] bg-white/60 py-16 text-center shadow-card backdrop-blur-sm">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-100 text-brand-600">
+              <GitBranch size={24} strokeWidth={1.5} />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-ink-900">Sin flujos todavía</h2>
+              <p className="mx-auto mt-1.5 max-w-sm text-sm text-ink-400">
+                Crea tu primer flujo para definir conversaciones estructuradas que el agente IA ejecutará de forma natural.
+              </p>
+            </div>
             <button
               onClick={handleNewFlow}
-              className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-600"
+              className="flex items-center gap-2 rounded-full bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white shadow-card transition hover:bg-brand-600"
             >
-              Crear flujo vacio
+              <Plus size={14} /> Crear primer flujo
             </button>
+            {loadError && <p className="text-xs font-semibold text-red-600">{loadError}</p>}
           </div>
-          {loadError && <p className="mt-3 text-xs font-semibold text-red-600">{loadError}</p>}
-        </div>
         </div>
       </div>
     );
@@ -919,338 +1248,286 @@ export function FlowBuilderPage() {
     <div className="page-shell">
       <div className="page-stack">
       <div className="page-header-card">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="page-title">Flujos</h1>
-            <p className="page-description">
-              Editor visual unificado para construir conversaciones, integrar APIs y definir el contrato de entrada del AI Router.
-            </p>
+            <p className="page-description">Conversaciones estructuradas que el agente ejecuta de forma natural.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setShowSimulation(true)}
-              className="rounded-lg border border-[rgba(17,17,16,0.09)] bg-white/70 backdrop-blur-sm px-3 py-2 text-xs font-semibold text-ink-600 transition hover:bg-[rgba(17,17,16,0.025)]"
-            >
-              Probar simulacion
-            </button>
-          </div>
-        </div>
-        {loadError && <p className="mt-3 text-xs font-semibold text-red-600">{loadError}</p>}
-      </div>
-
-      <div className="min-h-0 flex h-[calc(100dvh-13rem)] min-h-[620px] gap-0 overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.07)] bg-white/65 backdrop-blur-md shadow-card xl:h-[calc(100dvh-12rem)]">
-      {/* LEFT SIDEBAR — Flow list */}
-      <div className="flex min-h-0 w-[17rem] flex-shrink-0 flex-col border-r border-[rgba(17,17,16,0.09)] bg-white/70 backdrop-blur-sm xl:w-[18.5rem]">
-        <div className="border-b border-[rgba(17,17,16,0.06)] p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-bold text-ink-900">Flujos</h2>
-            <button
-              onClick={handleNewFlow}
-              className="flex items-center gap-1 rounded-lg bg-brand-500 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 transition"
-            >
-              <Plus size={12} /> Nuevo
-            </button>
-          </div>
-        </div>
-        <div className="min-h-[180px] max-h-[36%] overflow-y-auto border-b border-[rgba(17,17,16,0.06)]">
-          {flows.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => { setActiveFlowId(f.id); setSelectedNodeId(null); }}
-              className={`w-full border-b border-[rgba(17,17,16,0.06)] px-4 py-3 text-left transition hover:bg-[rgba(17,17,16,0.025)] ${
-                activeFlowId === f.id ? 'border-l-2 border-l-brand-400 bg-brand-50' : ''
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-ink-900 truncate">{f.nombre}</p>
-                <div
-                  className={`ml-1 h-2 w-2 rounded-full flex-shrink-0 ${f.activo ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                  title={f.activo ? 'Activo' : 'Inactivo'}
-                />
-              </div>
-              <p className="mt-0.5 truncate text-xs text-ink-400">{f.descripcion}</p>
-              <div className="mt-1 flex items-center gap-2">
-                <div className="flex flex-wrap gap-1">
-                  {f.canales.slice(0, 2).map((channelId) => {
-                    const channel = CHANNEL_OPTIONS.find((opt) => opt.id === channelId);
-                    return (
-                      <span key={channelId} className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${channel?.className ?? 'bg-[rgba(17,17,16,0.06)] text-ink-600'}`}>
-                        {channel?.label ?? channelId}
-                      </span>
-                    );
-                  })}
-                  {f.canales.length > 2 && (
-                    <span className="rounded-full bg-[rgba(17,17,16,0.06)] px-2 py-0.5 text-[10px] font-semibold text-ink-600">
-                      +{f.canales.length - 2}
-                    </span>
-                  )}
-                </div>
-                <span className="text-[10px] text-ink-400">{f.nodes.length} nodos</span>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1">
-                <span className="rounded-full bg-[rgba(17,17,16,0.06)] px-2 py-0.5 text-[10px] font-semibold text-ink-600">
-                  Router: {f.routerConfig.triggerType}
-                </span>
-                {f.routerConfig.triggerType !== 'manual' && (
-                  <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
-                    {f.routerConfig.intent}
-                  </span>
-                )}
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {/* Flow properties */}
-        {activeFlow && (
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-ink-400">Propiedades</p>
-            <div>
-              <label className="mb-0.5 block text-[10px] font-semibold text-ink-400">Nombre</label>
-              <input
-                type="text"
-                value={activeFlow.nombre}
-                onChange={(e) => updateActiveFlow({ nombre: e.target.value })}
-                className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] px-2.5 py-1.5 text-xs text-ink-800 outline-none focus:border-brand-400"
-              />
-            </div>
-            <div>
-              <label className="mb-0.5 block text-[10px] font-semibold text-ink-400">Descripción</label>
-              <textarea
-                value={activeFlow.descripcion}
-                onChange={(e) => updateActiveFlow({ descripcion: e.target.value })}
-                rows={2}
-                className="w-full resize-none rounded-lg border border-[rgba(17,17,16,0.09)] px-2.5 py-1.5 text-xs text-ink-800 outline-none focus:border-brand-400"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-ink-600">Estado</span>
-              <button
-                onClick={() => handleToggleActive(activeFlowId)}
-                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                  activeFlow.activo ? 'bg-emerald-100 text-emerald-700' : 'bg-[rgba(17,17,16,0.06)] text-ink-400'
-                }`}
-              >
-                {activeFlow.activo ? 'Activo' : 'Inactivo'}
-              </button>
-            </div>
+          <div className="flex items-center gap-2">
             <button
               onClick={() => void handleSaveFlow()}
               disabled={savingFlow}
-              className="w-full rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-full bg-ink-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-ink-800 disabled:opacity-50"
             >
               {savingFlow ? 'Guardando...' : 'Guardar flujo'}
             </button>
-            <div>
-              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400">Canales disponibles</label>
-              <div className="flex flex-wrap gap-1.5">
-                {CHANNEL_OPTIONS.map((channel) => {
-                  const selected = activeFlow.canales.includes(channel.id);
-                  return (
-                    <button
-                      key={channel.id}
-                      onClick={() => toggleFlowChannel(channel.id)}
-                      className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition ${
-                        selected ? channel.className : 'bg-[rgba(17,17,16,0.06)] text-ink-400 hover:bg-[rgba(17,17,16,0.08)]'
-                      }`}
-                    >
-                      {channel.label}
-                    </button>
-                  );
-                })}
+            <button
+              onClick={() => setShowSimulation(true)}
+              className="flex items-center gap-2 rounded-full border border-[rgba(17,17,16,0.09)] bg-white/70 px-4 py-2 text-xs font-semibold text-ink-700 backdrop-blur-sm transition hover:bg-white"
+            >
+              <Play size={12} /> Simular
+            </button>
+          </div>
+        </div>
+        {loadError && <p className="mt-2 text-xs font-semibold text-red-600">{loadError}</p>}
+      </div>
+
+      <div className="flex h-[calc(100dvh-13rem)] min-h-[620px] gap-0 overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.55)] border-b-[rgba(17,17,16,0.07)] bg-white/65 shadow-card backdrop-blur-md xl:h-[calc(100dvh-12rem)]">
+
+      {/* LEFT SIDEBAR */}
+      <div className="flex min-h-0 w-64 flex-shrink-0 flex-col border-r border-[rgba(17,17,16,0.09)] bg-white/80 backdrop-blur-sm xl:w-72">
+        {/* Tabs */}
+        <div className="flex shrink-0 border-b border-[rgba(17,17,16,0.06)]">
+          <button
+            onClick={() => setSidebarTab('flows')}
+            className={`flex-1 py-3 text-[11px] font-semibold transition ${sidebarTab === 'flows' ? 'border-b-2 border-brand-400 text-brand-600' : 'text-ink-400 hover:text-ink-700'}`}
+          >
+            Flujos
+          </button>
+          <button
+            onClick={() => setSidebarTab('settings')}
+            className={`flex-1 py-3 text-[11px] font-semibold transition ${sidebarTab === 'settings' ? 'border-b-2 border-brand-400 text-brand-600' : 'text-ink-400 hover:text-ink-700'}`}
+          >
+            Configurar
+          </button>
+        </div>
+
+        {/* Flows list */}
+        {sidebarTab === 'flows' && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="shrink-0 p-3">
+              <button
+                onClick={handleNewFlow}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-brand-200 bg-brand-50/60 px-3 py-2.5 text-xs font-semibold text-brand-600 transition hover:bg-brand-50"
+              >
+                <Plus size={13} /> Nuevo flujo
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {flows.map((f) => {
+                const isActive = activeFlowId === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => { setActiveFlowId(f.id); setSelectedNodeId(null); setSidebarTab('settings'); }}
+                    className={`w-full border-b border-[rgba(17,17,16,0.05)] px-4 py-3.5 text-left transition ${isActive ? 'bg-brand-50' : 'hover:bg-[rgba(17,17,16,0.025)]'}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className={`truncate text-[13px] font-semibold ${isActive ? 'text-brand-700' : 'text-ink-800'}`}>{f.nombre}</p>
+                        <p className="mt-0.5 truncate text-[11px] text-ink-400">{f.descripcion}</p>
+                      </div>
+                      <div className="mt-1 flex shrink-0 flex-col items-end gap-1">
+                        <div className={`h-1.5 w-1.5 rounded-full ${f.activo ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                        <span className="text-[10px] text-ink-300">{f.nodes.length} nodos</span>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {f.routerConfig.triggerType !== 'manual' && (
+                        <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-600 ring-1 ring-brand-100">
+                          {intents.find((i) => i.value === f.routerConfig.intent)?.label ?? f.routerConfig.intent}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Settings tab */}
+        {sidebarTab === 'settings' && activeFlow && (
+          <div className="min-h-0 flex-1 overflow-y-auto divide-y divide-[rgba(17,17,16,0.05)]">
+            <div className="space-y-3 p-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-ink-300">General</p>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-ink-500">Nombre</label>
+                <input
+                  type="text" value={activeFlow.nombre}
+                  onChange={(e) => updateActiveFlow({ nombre: e.target.value })}
+                  className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] bg-white/80 px-3 py-2 text-sm text-ink-800 outline-none focus:border-brand-400"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-ink-500">Descripción</label>
+                <textarea
+                  value={activeFlow.descripcion} rows={2}
+                  onChange={(e) => updateActiveFlow({ descripcion: e.target.value })}
+                  className="w-full resize-none rounded-lg border border-[rgba(17,17,16,0.09)] bg-white/80 px-3 py-2 text-sm text-ink-800 outline-none focus:border-brand-400"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-ink-500">Estado</span>
+                <button
+                  onClick={() => handleToggleActive(activeFlowId)}
+                  className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${activeFlow.activo ? 'bg-emerald-100 text-emerald-700' : 'bg-[rgba(17,17,16,0.06)] text-ink-400'}`}
+                >
+                  {activeFlow.activo ? 'Activo' : 'Inactivo'}
+                </button>
               </div>
             </div>
-            <details className="rounded-xl border border-brand-100 bg-brand-50/50 p-3" open>
-              <summary className="mb-2 flex cursor-pointer list-none items-center justify-between gap-2">
-                <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-brand-700">
-                  <Bot size={12} />
-                  AI Router trigger
-                </p>
-                <span className="text-[10px] font-semibold text-brand-700">Configurar</span>
-              </summary>
-              <div className="space-y-2.5">
-                <div>
-                  <label className="mb-1 block text-[10px] font-semibold text-ink-400">Modo de activación</label>
-                  <select
-                    value={activeFlow.routerConfig.triggerType}
-                    onChange={(e) => updateRouterConfig({ triggerType: e.target.value as Flow['routerConfig']['triggerType'] })}
-                    className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] px-2.5 py-1.5 text-xs outline-none focus:border-brand-400"
-                  >
-                    <option value="intent">Intent</option>
-                    <option value="keyword">Keyword</option>
-                    <option value="hybrid">Hybrid</option>
-                    <option value="manual">Manual</option>
-                  </select>
+
+            <div className="space-y-3 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Bot size={12} className="text-brand-600" />
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-brand-600">AI Router</p>
                 </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-semibold text-ink-400">Intent principal</label>
-                  <select
-                    value={activeFlow.routerConfig.intent}
-                    onChange={(e) => updateRouterConfig({ intent: e.target.value })}
-                    className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] px-2.5 py-1.5 text-xs outline-none focus:border-brand-400"
-                  >
-                    {ROUTER_INTENT_OPTIONS.map((intent) => (
-                      <option key={intent} value={intent}>{intent}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-semibold text-ink-400">Keywords</label>
-                  <input
-                    type="text"
-                    value={activeFlow.routerConfig.keywords.join(', ')}
-                    onChange={(e) =>
-                      updateRouterConfig({
-                        keywords: e.target.value.split(',').map((item) => item.trim()).filter(Boolean),
-                      })
-                    }
-                    placeholder="subsidio, certificado, pqrs"
-                    className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] px-2.5 py-1.5 text-xs outline-none focus:border-brand-400"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-semibold text-ink-400">
-                    Umbral de confianza ({Math.round(activeFlow.routerConfig.confidenceThreshold * 100)}%)
-                  </label>
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="0.99"
-                    step="0.01"
-                    value={activeFlow.routerConfig.confidenceThreshold}
-                    onChange={(e) => updateRouterConfig({ confidenceThreshold: Number(e.target.value) })}
-                    className="w-full"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-semibold text-ink-400">Fallback del router</label>
-                  <select
-                    value={activeFlow.routerConfig.fallbackAction}
-                    onChange={(e) => updateRouterConfig({ fallbackAction: e.target.value as Flow['routerConfig']['fallbackAction'] })}
-                    className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] px-2.5 py-1.5 text-xs outline-none focus:border-brand-400"
-                  >
-                    <option value="request_clarification">Request clarification</option>
-                    <option value="escalate_to_human">Escalate to human</option>
-                  </select>
-                </div>
-                <div className="rounded-lg border border-[rgba(17,17,16,0.09)] bg-white/70 backdrop-blur-sm px-3 py-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">Resumen</p>
-                  <p className="mt-1 text-[11px] leading-relaxed text-ink-700">
-                    El AI Router podrá activar este flujo cuando detecte <span className="font-semibold">{activeFlow.routerConfig.intent}</span>
-                    {' '}con confianza mínima de <span className="font-semibold">{Math.round(activeFlow.routerConfig.confidenceThreshold * 100)}%</span>.
-                  </p>
-                </div>
-                {routerPreview && (
-                  <details className="rounded-lg border border-[rgba(17,17,16,0.09)] bg-ink-900 px-3 py-2">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">AI Router preview</p>
-                      <button
-                        onClick={(event) => {
-                          event.preventDefault();
-                          void navigator.clipboard.writeText(JSON.stringify(routerPreview, null, 2));
-                          showSuccess('Router preview copiado');
-                        }}
-                        className="rounded-md border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
-                      >
-                        Copiar JSON
-                      </button>
-                    </summary>
-                    <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-emerald-200">
-                      {JSON.stringify(routerPreview, null, 2)}
-                    </pre>
-                  </details>
-                )}
+                <button
+                  onClick={() => setShowIntentsModal(true)}
+                  className="flex items-center gap-1 rounded-lg bg-brand-50 px-2 py-1 text-[10px] font-semibold text-brand-600 transition hover:bg-brand-100"
+                >
+                  <Plus size={10} /> Mis intenciones
+                </button>
               </div>
-            </details>
-            <button
-              onClick={requestDeleteFlow}
-              className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-200"
-            >
-              <Trash2 size={12} /> Eliminar flujo
-            </button>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-ink-500">Activación</label>
+                <select
+                  value={activeFlow.routerConfig.triggerType}
+                  onChange={(e) => updateRouterConfig({ triggerType: e.target.value as Flow['routerConfig']['triggerType'] })}
+                  className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] bg-white/80 px-3 py-2 text-sm outline-none focus:border-brand-400"
+                >
+                  <option value="intent">Por intención</option>
+                  <option value="keyword">Por palabra clave</option>
+                  <option value="hybrid">Híbrido</option>
+                  <option value="manual">Manual (solo API)</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-ink-500">Intención detectada</label>
+                <select
+                  value={activeFlow.routerConfig.intent}
+                  onChange={(e) => updateRouterConfig({ intent: e.target.value })}
+                  className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] bg-white/80 px-3 py-2 text-sm outline-none focus:border-brand-400"
+                >
+                  {intents.length > 0 ? (
+                    <>
+                      {intents.filter((i) => !i.is_custom).map((i) => (
+                        <option key={i.value} value={i.value}>{i.label}</option>
+                      ))}
+                      {intents.some((i) => i.is_custom) && (
+                        <optgroup label="── Mis intenciones ──">
+                          {intents.filter((i) => i.is_custom).map((i) => (
+                            <option key={i.value} value={i.value}>{i.label}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </>
+                  ) : (
+                    <option value={activeFlow.routerConfig.intent}>{activeFlow.routerConfig.intent}</option>
+                  )}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-ink-500">Keywords</label>
+                <input type="text"
+                  value={activeFlow.routerConfig.keywords.join(', ')}
+                  onChange={(e) => updateRouterConfig({ keywords: e.target.value.split(',').map((k) => k.trim()).filter(Boolean) })}
+                  placeholder="subsidio, certificado..."
+                  className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] bg-white/80 px-3 py-2 text-sm outline-none focus:border-brand-400"
+                />
+              </div>
+              <div>
+                <label className="mb-1 flex items-center justify-between text-[11px] font-semibold text-ink-500">
+                  <span>Confianza mínima</span>
+                  <span className="font-bold text-brand-600">{Math.round(activeFlow.routerConfig.confidenceThreshold * 100)}%</span>
+                </label>
+                <input type="range" min="0.5" max="0.99" step="0.01"
+                  value={activeFlow.routerConfig.confidenceThreshold}
+                  onChange={(e) => updateRouterConfig({ confidenceThreshold: Number(e.target.value) })}
+                  className="w-full accent-brand-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-ink-500">Si no hay confianza</label>
+                <select
+                  value={activeFlow.routerConfig.fallbackAction}
+                  onChange={(e) => updateRouterConfig({ fallbackAction: e.target.value as Flow['routerConfig']['fallbackAction'] })}
+                  className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] bg-white/80 px-3 py-2 text-sm outline-none focus:border-brand-400"
+                >
+                  <option value="request_clarification">Pedir aclaración</option>
+                  <option value="escalate_to_human">Escalar a humano</option>
+                </select>
+              </div>
+              <div className="rounded-xl bg-brand-50 px-3 py-2.5 text-[11px] leading-relaxed text-brand-800">
+                {(() => {
+                const matched = intents.find((i) => i.value === activeFlow.routerConfig.intent);
+                return <>Activa este flujo cuando detecte <span className="font-semibold">{matched?.label ?? activeFlow.routerConfig.intent}</span>{matched?.is_custom && <span className="ml-1 rounded-full bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold text-brand-700">tuya</span>} con al menos <span className="font-semibold">{Math.round(activeFlow.routerConfig.confidenceThreshold * 100)}%</span> de confianza.</>;
+              })()}
+              </div>
+            </div>
+
+            <div className="p-4">
+              <button onClick={requestDeleteFlow}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5 text-[11px] font-semibold text-red-600 transition hover:bg-red-100"
+              >
+                <Trash2 size={12} /> Eliminar este flujo
+              </button>
+            </div>
           </div>
         )}
       </div>
 
       {/* CENTER — Canvas */}
-      <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[rgba(17,17,16,0.025)]">
-        {/* Canvas toolbar */}
-        <div className="border-b border-[rgba(17,17,16,0.09)] bg-white/70 backdrop-blur-sm px-3 py-3">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
-            <div>
-              <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-ink-400">Nodos</p>
-              <div className="flex flex-wrap gap-1">
-                {NODE_TYPES_LIST.map((tipo) => {
-                  const cfg = NODE_CONFIG[tipo];
-                  return (
-                    <button
-                      key={tipo}
-                      onClick={() => handleAddNodeType(tipo)}
-                      title={tipo}
-                      className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold transition ${cfg.bg} ${cfg.border} ${cfg.color} hover:opacity-80`}
-                    >
-                      {cfg.icon} {tipo}
-                    </button>
-                  );
-                })}
-              </div>
+      <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[rgba(17,17,16,0.02)]" style={{ backgroundImage: 'radial-gradient(circle, rgba(17,17,16,0.06) 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
+        {/* Toolbar */}
+        <div className="shrink-0 border-b border-[rgba(17,17,16,0.07)] bg-white/80 px-4 py-2.5 backdrop-blur-sm">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {/* Node palette — grouped */}
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="mr-1 text-[10px] font-bold uppercase tracking-widest text-ink-300">Agregar</span>
+              {(['message', 'quickReply', 'collect'] as FlowNodeType[]).map((tipo) => {
+                const cfg = NODE_CONFIG[tipo];
+                return (
+                  <button key={tipo} onClick={() => handleAddNodeType(tipo)} title={`Agregar ${NODE_TYPE_LABELS[tipo]}`}
+                    className={`flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition hover:opacity-80 ${cfg.bg} ${cfg.border} ${cfg.color}`}
+                  >
+                    {cfg.icon} {NODE_TYPE_LABELS[tipo]}
+                  </button>
+                );
+              })}
+              <span className="mx-1 h-4 w-px bg-[rgba(17,17,16,0.1)]" />
+              {(['condition', 'api'] as FlowNodeType[]).map((tipo) => {
+                const cfg = NODE_CONFIG[tipo];
+                return (
+                  <button key={tipo} onClick={() => handleAddNodeType(tipo)} title={`Agregar ${NODE_TYPE_LABELS[tipo]}`}
+                    className={`flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition hover:opacity-80 ${cfg.bg} ${cfg.border} ${cfg.color}`}
+                  >
+                    {cfg.icon} {NODE_TYPE_LABELS[tipo]}
+                  </button>
+                );
+              })}
+              <span className="mx-1 h-4 w-px bg-[rgba(17,17,16,0.1)]" />
+              {(['delay', 'media', 'tag', 'escalate', 'end'] as FlowNodeType[]).map((tipo) => {
+                const cfg = NODE_CONFIG[tipo];
+                return (
+                  <button key={tipo} onClick={() => handleAddNodeType(tipo)} title={NODE_TYPE_LABELS[tipo]}
+                    className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold transition hover:opacity-80 ${cfg.bg} ${cfg.border} ${cfg.color}`}
+                  >
+                    {cfg.icon}
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="rounded-xl border border-[rgba(17,17,16,0.09)] bg-[rgba(17,17,16,0.025)] px-2 py-1.5">
-              <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-ink-400">Vista</p>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => applyZoom(zoom - 0.1)}
-                  className="rounded-lg bg-white/70 backdrop-blur-sm px-2 py-1 text-xs font-semibold text-ink-600 shadow-card hover:bg-[rgba(17,17,16,0.06)]"
-                  title="Zoom out"
-                >
-                  <Minus size={12} />
-                </button>
-                <button
-                  onClick={() => applyZoom(1)}
-                  className="rounded-lg bg-white/70 backdrop-blur-sm px-2 py-1 text-xs font-semibold text-ink-600 shadow-card hover:bg-[rgba(17,17,16,0.06)]"
-                  title="Reset zoom"
-                >
-                  <RotateCcw size={12} />
-                </button>
-                <button
-                  onClick={() => applyZoom(zoom + 0.1)}
-                  className="rounded-lg bg-white/70 backdrop-blur-sm px-2 py-1 text-xs font-semibold text-ink-600 shadow-card hover:bg-[rgba(17,17,16,0.06)]"
-                  title="Zoom in"
-                >
-                  <Plus size={12} />
-                </button>
-                <span className="rounded-md bg-white/70 backdrop-blur-sm px-2 py-1 text-xs font-semibold text-ink-600 shadow-card">
-                  {Math.round(zoom * 100)}%
-                </span>
-              </div>
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* View controls */}
+            <div className="flex items-center gap-1 rounded-xl border border-[rgba(17,17,16,0.08)] bg-[rgba(17,17,16,0.025)] px-2 py-1">
+              <button onClick={() => applyZoom(zoom - 0.1)} className="rounded-md p-1 text-ink-500 hover:bg-white hover:shadow-sm transition" title="Zoom out"><Minus size={12} /></button>
+              <span className="min-w-[36px] text-center text-[11px] font-semibold text-ink-600">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => applyZoom(zoom + 0.1)} className="rounded-md p-1 text-ink-500 hover:bg-white hover:shadow-sm transition" title="Zoom in"><Plus size={12} /></button>
+              <button onClick={() => applyZoom(1)} className="rounded-md p-1 text-ink-400 hover:bg-white hover:shadow-sm transition" title="Resetear zoom"><RotateCcw size={12} /></button>
             </div>
 
-            <div className="rounded-xl border border-[rgba(17,17,16,0.09)] bg-[rgba(17,17,16,0.025)] px-2 py-1.5">
-              <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-ink-400">Acciones</p>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={handleAutoLayout}
-                  className="flex items-center gap-1 rounded-lg bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-200"
-                >
-                  <Sparkles size={12} /> Layout
-                </button>
-                <button
-                  onClick={() => setShowSimulation(true)}
-                  className="flex items-center gap-1 rounded-lg bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-200"
-                >
-                  <Play size={12} /> Simular
-                </button>
-                <button
-                  onClick={handleExportJSON}
-                  className="rounded-lg bg-white/70 backdrop-blur-sm px-2.5 py-1 text-xs font-semibold text-ink-600 shadow-card hover:bg-[rgba(17,17,16,0.06)]"
-                >
-                  Export
-                </button>
-              </div>
-            </div>
+            <button onClick={handleAutoLayout}
+              className="flex items-center gap-1.5 rounded-xl border border-[rgba(17,17,16,0.08)] bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-ink-600 transition hover:bg-white"
+            >
+              <Sparkles size={12} /> Ordenar
+            </button>
           </div>
-          <p className="mt-2 text-[11px] text-ink-400">Tip: usa Ctrl + rueda para zoom con mouse.</p>
         </div>
 
         {/* Scrollable canvas */}
@@ -1348,19 +1625,22 @@ export function FlowBuilderPage() {
         {selectedNode && (
           <motion.div
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 300, opacity: 1 }}
+            animate={{ width: 288, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="flex min-w-[280px] max-w-[320px] flex-shrink-0 flex-col overflow-hidden border-l border-[rgba(17,17,16,0.09)] bg-white/70 backdrop-blur-sm"
+            transition={{ duration: 0.18 }}
+            className="flex min-w-[272px] max-w-[300px] flex-shrink-0 flex-col overflow-hidden border-l border-[rgba(17,17,16,0.09)] bg-white/80 backdrop-blur-sm"
           >
-            <div className="flex items-center justify-between border-b border-[rgba(17,17,16,0.06)] p-4">
-              <div>
-                <div className={`mb-1 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${NODE_CONFIG[selectedNode.tipo].bg} ${NODE_CONFIG[selectedNode.tipo].color}`}>
-                  {NODE_CONFIG[selectedNode.tipo].icon} {selectedNode.tipo}
+            <div className="flex items-center justify-between border-b border-[rgba(17,17,16,0.06)] px-4 py-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className={`flex h-8 w-8 items-center justify-center rounded-xl ${NODE_CONFIG[selectedNode.tipo].bg}`}>
+                  <span className={NODE_CONFIG[selectedNode.tipo].color}>{NODE_CONFIG[selectedNode.tipo].icon}</span>
                 </div>
-                <p className="text-sm font-bold text-ink-900">{selectedNode.label}</p>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">{NODE_TYPE_LABELS[selectedNode.tipo]}</p>
+                  <p className="text-sm font-bold text-ink-900 leading-tight">{selectedNode.label}</p>
+                </div>
               </div>
-              <button onClick={() => setSelectedNodeId(null)} className="rounded-lg p-1 hover:bg-[rgba(17,17,16,0.06)] transition">
+              <button onClick={() => setSelectedNodeId(null)} className="rounded-lg p-1.5 hover:bg-[rgba(17,17,16,0.06)] transition">
                 <X size={14} className="text-ink-400" />
               </button>
             </div>
@@ -1391,6 +1671,14 @@ export function FlowBuilderPage() {
 
               {selectedNode.tipo === 'quickReply' && (
                 <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400">Texto del mensaje</label>
+                  <textarea
+                    value={selectedNode.contenido ?? ''}
+                    onChange={(e) => handleUpdateNode({ contenido: e.target.value })}
+                    rows={3}
+                    className="mb-3 w-full resize-none rounded-lg border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm outline-none focus:border-brand-400 placeholder:text-ink-300"
+                    placeholder="¿Cuál es tu consulta? Elige una opción:"
+                  />
                   <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-ink-400">Opciones</label>
                   <div className="space-y-2">
                     {(selectedNode.opciones ?? []).map((opt, i) => (
@@ -1427,12 +1715,12 @@ export function FlowBuilderPage() {
                 <>
                   <div>
                     <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400">Pregunta</label>
-                    <input
-                      type="text"
+                    <textarea
                       value={selectedNode.pregunta ?? ''}
                       onChange={(e) => handleUpdateNode({ pregunta: e.target.value })}
-                      className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm outline-none focus:border-brand-400"
-                      placeholder="¿Cuál es tu cédula?"
+                      rows={3}
+                      className="w-full resize-none rounded-lg border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm outline-none focus:border-brand-400"
+                      placeholder="¿Cuál es tu número de cédula?"
                     />
                   </div>
                   <div>
@@ -1444,6 +1732,20 @@ export function FlowBuilderPage() {
                       className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm font-mono outline-none focus:border-brand-400"
                       placeholder="cedula"
                     />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400">Tipo de entrada</label>
+                    <select
+                      value={selectedNode.inputType ?? 'text'}
+                      onChange={(e) => handleUpdateNode({ inputType: e.target.value as FlowNode['inputType'] })}
+                      className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm outline-none focus:border-brand-400"
+                    >
+                      <option value="text">Texto libre</option>
+                      <option value="number">Número</option>
+                      <option value="email">Email</option>
+                      <option value="phone">Teléfono</option>
+                      <option value="option">Opción (valida contra lista)</option>
+                    </select>
                   </div>
                 </>
               )}
@@ -1520,6 +1822,94 @@ export function FlowBuilderPage() {
                 </div>
               )}
 
+              {selectedNode.tipo === 'condition' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400">Variable a evaluar</label>
+                    <input
+                      type="text"
+                      value={selectedNode.variable ?? ''}
+                      onChange={(e) => handleUpdateNode({ variable: e.target.value })}
+                      className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm font-mono outline-none focus:border-brand-400"
+                      placeholder="nombre_variable"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400">Operador</label>
+                    <select
+                      value={selectedNode.operator ?? 'eq'}
+                      onChange={(e) => handleUpdateNode({ operator: e.target.value })}
+                      className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm outline-none focus:border-brand-400"
+                    >
+                      <option value="eq">Es igual a</option>
+                      <option value="neq">Es distinto de</option>
+                      <option value="contains">Contiene</option>
+                      <option value="not_contains">No contiene</option>
+                      <option value="starts_with">Empieza con</option>
+                      <option value="in">Está en (separado por comas)</option>
+                      <option value="gt">Mayor que</option>
+                      <option value="lt">Menor que</option>
+                      <option value="regex">Regex</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400">Valor</label>
+                    <input
+                      type="text"
+                      value={selectedNode.conditionValue ?? ''}
+                      onChange={(e) => handleUpdateNode({ conditionValue: e.target.value })}
+                      className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm outline-none focus:border-brand-400"
+                      placeholder="valor esperado"
+                    />
+                  </div>
+                  <div className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-2 text-[11px] leading-relaxed text-orange-800">
+                    Conecta la rama <span className="font-semibold">Si</span> y <span className="font-semibold">No</span> a los nodos destino.
+                  </div>
+                </div>
+              )}
+
+              {selectedNode.tipo === 'escalate' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400">Mensaje antes de escalar</label>
+                    <textarea
+                      value={selectedNode.contenido ?? ''}
+                      onChange={(e) => handleUpdateNode({ contenido: e.target.value })}
+                      rows={3}
+                      className="w-full resize-none rounded-lg border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm outline-none focus:border-brand-400 placeholder:text-ink-300"
+                      placeholder="Un agente te atenderá en breve..."
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400">Motivo de escalamiento</label>
+                    <input
+                      type="text"
+                      value={selectedNode.reason ?? 'flow_escalation'}
+                      onChange={(e) => handleUpdateNode({ reason: e.target.value })}
+                      className="w-full rounded-lg border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm outline-none focus:border-brand-400"
+                      placeholder="flow_escalation"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {(selectedNode.tipo === 'end') && (
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-ink-400">Mensaje de cierre</label>
+                  <textarea
+                    value={selectedNode.contenido ?? ''}
+                    onChange={(e) => handleUpdateNode({ contenido: e.target.value })}
+                    rows={3}
+                    className="w-full resize-none rounded-lg border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm outline-none focus:border-brand-400 placeholder:text-ink-300"
+                    placeholder="¡Gracias! Fue un placer ayudarte."
+                  />
+                </div>
+              )}
+
+              <div className="rounded-lg border border-brand-100 bg-brand-50/60 px-3 py-2 text-[11px] leading-relaxed text-brand-800">
+                <span className="font-semibold">Voz natural:</span> el AI Router envuelve cada respuesta con la voz de tu marca. El cliente no percibe un script rígido.
+              </div>
+
               {selectedNode.tipo !== 'end' && (
                 <div>
                   <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-ink-400">Conexiones salientes</label>
@@ -1567,6 +1957,29 @@ export function FlowBuilderPage() {
               </button>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Custom intents modal */}
+      <AnimatePresence>
+        {showIntentsModal && (
+          <CustomIntentsModal
+            intents={intents}
+            onClose={() => setShowIntentsModal(false)}
+            onCreated={(ci) => setIntents((prev) => [...prev, ci])}
+            onDeleted={(id) => setIntents((prev) => prev.filter((i) => i.id !== id))}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* New flow modal */}
+      <AnimatePresence>
+        {showNewFlowModal && (
+          <NewFlowModal
+            intents={intents}
+            onClose={() => setShowNewFlowModal(false)}
+            onCreate={handleCreateFlow}
+          />
         )}
       </AnimatePresence>
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -15,28 +15,16 @@ import {
 import { api } from '../services/api';
 import type { WebWidgetPublicConfig } from '../services/api';
 
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
 type DemoMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
 };
 
-type AssistantMode = 'listening' | 'reasoning' | 'handoff';
-
-type ConversationMemory = {
-  visitorName: string | null;
-  activeTopic: 'subsidio' | 'certificado' | 'afiliacion' | 'asesor' | 'general' | null;
-  lastDocumentHint: string | null;
-};
-
-const INITIAL_MESSAGES: DemoMessage[] = [
-  {
-    id: 'm-1',
-    role: 'assistant',
-    content:
-      'Hola, te doy la bienvenida a Comfaguajira. Soy Laura y estoy aquí para ayudarte con certificados, subsidios, afiliación o cualquier orientación que necesites.',
-  },
-];
+type AssistantMode = 'listening' | 'reasoning';
 
 const DEFAULT_WIDGET: WebWidgetPublicConfig = {
   organization_slug: '',
@@ -75,72 +63,44 @@ function TypingIndicator({ mode }: { mode: AssistantMode }) {
           ))}
         </div>
         <p className="mt-2 text-[11px] font-medium text-ink-400">
-          {mode === 'handoff' && 'Preparando el contexto para una asesora...'}
-          {mode === 'reasoning' && 'Entendiendo la consulta y armando la mejor respuesta...'}
-          {mode === 'listening' && 'Pensando la siguiente respuesta...'}
+          {mode === 'reasoning' ? 'Entendiendo la consulta...' : 'Preparando respuesta...'}
         </p>
       </div>
     </div>
   );
 }
 
-function detectName(input: string) {
-  const match = input.match(/(?:soy|me llamo)\s+([a-záéíóúñ]+)/i);
-  if (!match?.[1]) return null;
-  const value = match[1];
-  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
-}
-
-function detectTopic(input: string): ConversationMemory['activeTopic'] {
-  const normalized = input.toLowerCase();
-  if (normalized.includes('certificado')) return 'certificado';
-  if (normalized.includes('subsidio')) return 'subsidio';
-  if (normalized.includes('afili')) return 'afiliacion';
-  if (normalized.includes('asesor') || normalized.includes('humano')) return 'asesor';
-  return 'general';
-}
-
-function nextMode(topic: ConversationMemory['activeTopic']) {
-  if (topic === 'asesor') return 'handoff';
-  if (topic === 'subsidio' || topic === 'certificado' || topic === 'afiliacion') return 'reasoning';
-  return 'listening';
-}
-
-function buildAssistantReply(input: string, memory: ConversationMemory) {
-  const normalized = input.toLowerCase();
-  const salutation = memory.visitorName ? `${memory.visitorName}, ` : '';
-
-  if (memory.activeTopic === 'asesor') {
-    return `${salutation}claro. Voy a dejar tu caso encaminado para que una asesora lo retome con el contexto completo y puedas avanzar más rápido.`;
+function generateSessionId(): string {
+  if (window.crypto?.getRandomValues) {
+    const arr = new Uint8Array(16);
+    window.crypto.getRandomValues(arr);
+    return Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('');
   }
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
 
-  if (memory.activeTopic === 'certificado') {
-    if (/\d{5,}/.test(normalized)) {
-      return `${salutation}perfecto. Con ese dato lo habitual es validar la información en el sistema y confirmar de inmediato si el certificado puede generarse o si hace falta una validación adicional.`;
+function loadPersistedSession(orgSlug: string): { session_id: string; session_token: string } | null {
+  try {
+    const raw = localStorage.getItem(`vendly_session_${orgSlug}`);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as { session_id: string; session_token: string; created_at: number };
+    if (Date.now() - s.created_at > SESSION_TTL_MS) {
+      localStorage.removeItem(`vendly_session_${orgSlug}`);
+      return null;
     }
-    return `${salutation}con gusto te ayudo con el certificado. Para avanzar, normalmente te pediría tu documento y, si hace falta, confirmaría un dato adicional antes de generarlo.`;
+    return s;
+  } catch {
+    return null;
   }
+}
 
-  if (memory.activeTopic === 'subsidio') {
-    if (/\d{5,}/.test(normalized)) {
-      return `${salutation}gracias. Con ese dato puedo revisar el estado del subsidio y darte una respuesta clara: si ya está aprobado, si sigue en proceso o si hay alguna novedad por validar.`;
-    }
-    return `${salutation}puedo revisarlo contigo. Para hacerlo bien, primero confirmaría tu documento y enseguida te indicaría el estado del subsidio de forma clara.`;
-  }
-
-  if (memory.activeTopic === 'afiliacion') {
-    return `${salutation}te ayudo con la afiliación. Lo primero es entender tu caso y, a partir de eso, indicarte los documentos necesarios y la forma más conveniente de completar el proceso.`;
-  }
-
-  if (normalized.includes('hola') || normalized.includes('buenas')) {
-    return `${salutation}hola, con mucho gusto. Cuéntame qué necesitas y te voy orientando paso a paso para ayudarte desde aquí o dejar tu caso encaminado con el equipo de atención.`;
-  }
-
-  if (normalized.includes('gracias')) {
-    return `${salutation}con gusto. Si lo deseas, podemos continuar por aquí mismo con el siguiente paso.`;
-  }
-
-  return `${salutation}ya tengo una idea de lo que necesitas. Para ayudarte mejor, te pediría solo el dato necesario para continuar con el proceso.`;
+function persistSession(orgSlug: string, sessionId: string, sessionToken: string) {
+  try {
+    localStorage.setItem(
+      `vendly_session_${orgSlug}`,
+      JSON.stringify({ session_id: sessionId, session_token: sessionToken, created_at: Date.now() })
+    );
+  } catch {}
 }
 
 export function WebWidgetDemoPage() {
@@ -148,44 +108,94 @@ export function WebWidgetDemoPage() {
   const orgSlug = searchParams.get('org') ?? '';
   const [widgetConfig, setWidgetConfig] = useState<WebWidgetPublicConfig>(DEFAULT_WIDGET);
   const [widgetOpen, setWidgetOpen] = useState(true);
-  const [messages, setMessages] = useState<DemoMessage[]>(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState<DemoMessage[]>([]);
   const [input, setInput] = useState('');
   const [assistantMode, setAssistantMode] = useState<AssistantMode>('listening');
   const [typing, setTyping] = useState(false);
-  const [memory, setMemory] = useState<ConversationMemory>({
-    visitorName: null,
-    activeTopic: null,
-    lastDocumentHint: null,
-  });
   const endRef = useRef<HTMLDivElement | null>(null);
 
+  // Session state
+  const [sessionId, setSessionId] = useState<string>('');
+  const [sessionToken, setSessionToken] = useState<string>('');
+  const wsRef = useRef<WebSocket | null>(null);
+  const seenIds = useRef<Set<string>>(new Set());
+
+  // Load config and initialize session
   useEffect(() => {
     let cancelled = false;
 
-    async function loadConfig() {
-      if (!orgSlug) return;
+    async function setup() {
+      if (!orgSlug) {
+        setMessages([{ id: 'greeting', role: 'assistant', content: DEFAULT_WIDGET.greeting_message }]);
+        return;
+      }
       try {
         const config = await api.getPublicWebWidgetConnection(orgSlug);
         if (cancelled) return;
         setWidgetConfig(config);
-        setMessages([
-          {
-            id: 'm-1',
-            role: 'assistant',
-            content: config.greeting_message || DEFAULT_WIDGET.greeting_message,
-          },
-        ]);
+        setMessages([{ id: 'greeting', role: 'assistant', content: config.greeting_message || DEFAULT_WIDGET.greeting_message }]);
+
+        // Init session
+        let sId: string;
+        let sToken: string;
+        const saved = loadPersistedSession(orgSlug);
+        if (saved) {
+          sId = saved.session_id;
+          sToken = saved.session_token;
+        } else {
+          sId = generateSessionId();
+          try {
+            const tokenRes = await api.getWebChatSessionToken(orgSlug, sId);
+            sToken = tokenRes.session_token;
+            persistSession(orgSlug, sId, sToken);
+          } catch {
+            sToken = '';
+          }
+        }
+        if (cancelled) return;
+        setSessionId(sId);
+        setSessionToken(sToken);
       } catch {
         if (cancelled) return;
         setWidgetConfig(DEFAULT_WIDGET);
+        setMessages([{ id: 'greeting', role: 'assistant', content: DEFAULT_WIDGET.greeting_message }]);
       }
     }
 
-    void loadConfig();
-    return () => {
-      cancelled = true;
-    };
+    void setup();
+    return () => { cancelled = true; };
   }, [orgSlug]);
+
+  // Connect WebSocket when session is ready
+  useEffect(() => {
+    if (!sessionId || !sessionToken || !orgSlug) return;
+
+    const wsProto = BASE_URL.startsWith('https') ? 'wss' : 'ws';
+    const wsHost = BASE_URL.replace(/^https?:\/\//, '');
+    const wsUrl = `${wsProto}://${wsHost}/ws/webchat/${encodeURIComponent(orgSlug)}/${encodeURIComponent(sessionId)}/?session_token=${encodeURIComponent(sessionToken)}`;
+
+    const socket = new WebSocket(wsUrl);
+    wsRef.current = socket;
+
+    socket.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data as string) as { type: string; message?: { id: string; role: string; content: string } };
+        if (data.type === 'new_message' && data.message) {
+          const msg = data.message;
+          if ((msg.role === 'bot' || msg.role === 'agent') && !seenIds.current.has(msg.id)) {
+            seenIds.current.add(msg.id);
+            setTyping(false);
+            setMessages((prev) => [...prev, { id: msg.id, role: 'assistant', content: msg.content }]);
+          }
+        }
+      } catch {}
+    };
+
+    return () => {
+      socket.close();
+      wsRef.current = null;
+    };
+  }, [sessionId, sessionToken, orgSlug]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -200,55 +210,48 @@ export function WebWidgetDemoPage() {
     []
   );
 
-  function queueAssistantReply(content: string, mode: AssistantMode) {
-    setTyping(true);
-    setAssistantMode(mode);
-    const delay = Math.min(2600, Math.max(950, content.length * 14));
-    window.setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content,
-        },
-      ]);
-      setTyping(false);
-    }, delay);
-  }
+  const handleSend = useCallback(
+    async (rawValue?: string) => {
+      const value = (rawValue ?? input).trim();
+      if (!value) return;
 
-  function handleSend(rawValue?: string) {
-    const value = (rawValue ?? input).trim();
-    if (!value) return;
+      setInput('');
+      setMessages((prev) => [...prev, { id: `user-${Date.now()}`, role: 'user', content: value }]);
+      setTyping(true);
+      setAssistantMode('reasoning');
 
-    const nextName = detectName(value) ?? memory.visitorName;
-    const nextTopic = detectTopic(value) ?? memory.activeTopic;
-    const nextMemory: ConversationMemory = {
-      visitorName: nextName,
-      activeTopic: nextTopic,
-      lastDocumentHint: /\d{5,}/.test(value) ? 'document_detected' : memory.lastDocumentHint,
-    };
+      try {
+        const payload = await api.sendWebChatMessage({
+          organization_slug: orgSlug || undefined,
+          session_id: sessionId || generateSessionId(),
+          session_token: sessionToken || undefined,
+          message: value,
+        });
 
-    setMemory(nextMemory);
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `user-${Date.now()}`,
-        role: 'user',
-        content: value,
-      },
-    ]);
-    setInput('');
+        // If WebSocket is not connected, show bot reply from REST response
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+          setTyping(false);
+          const botMsgs = payload.messages.filter((m) => m.role === 'bot' || m.role === 'agent');
+          for (const m of botMsgs) {
+            if (!seenIds.current.has(m.id)) {
+              seenIds.current.add(m.id);
+              setMessages((prev) => [...prev, { id: m.id, role: 'assistant', content: m.content }]);
+            }
+          }
+        }
+        // If WS is connected, bot reply will arrive via onmessage (which sets typing false)
+      } catch {
+        setTyping(false);
+        setMessages((prev) => [
+          ...prev,
+          { id: `err-${Date.now()}`, role: 'assistant', content: 'No pude enviar el mensaje. Verifica tu conexión.' },
+        ]);
+      }
+    },
+    [input, orgSlug, sessionId, sessionToken]
+  );
 
-    queueAssistantReply(buildAssistantReply(value, nextMemory), nextMode(nextTopic));
-  }
-
-  const toneBadge =
-    assistantMode === 'handoff'
-      ? 'bg-amber-100 text-amber-700'
-      : assistantMode === 'reasoning'
-        ? 'bg-sky-100 text-sky-700'
-        : 'bg-emerald-100 text-emerald-700';
+  const toneBadge = assistantMode === 'reasoning' ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700';
   const widgetTitle = widgetConfig.widget_name || DEFAULT_WIDGET.widget_name;
   const widgetSubtitle = orgSlug ? `Atencion digital de ${orgSlug}` : 'Atencion digital de la marca';
   const brandColorStyle = { backgroundColor: widgetConfig.brand_color || DEFAULT_WIDGET.brand_color };
@@ -267,7 +270,7 @@ export function WebWidgetDemoPage() {
             <div className="flex flex-wrap gap-2">
               <div className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold ${toneBadge}`}>
                 <Brain size={14} />
-                {assistantMode === 'handoff' ? 'Preparando handoff humano' : assistantMode === 'reasoning' ? 'Razonando respuesta' : 'Escucha activa'}
+                {assistantMode === 'reasoning' ? 'Razonando respuesta' : 'Escucha activa'}
               </div>
               <button
                 onClick={() => setWidgetOpen((prev) => !prev)}

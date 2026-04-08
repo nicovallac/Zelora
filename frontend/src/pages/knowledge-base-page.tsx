@@ -52,30 +52,38 @@ function documentToListItem(d: KBDocumentApiItem): KnowledgeListItem {
   };
 }
 
-function buildPayload(title: string, content: string, category?: string, purpose?: KBArticlePurpose): KBArticlePayload {
+function buildPayload(
+  title: string,
+  content: string,
+  category?: string,
+  purpose?: KBArticlePurpose,
+  tags?: string[],
+): KBArticlePayload {
   const c = content.trim();
   const t = title.trim() || preview(c).slice(0, 60) || 'Sin titulo';
-  return { title: t, content: c, category: category || 'General', purpose: purpose || 'faq', tags: [], status: 'published' };
+  return { title: t, content: c, category: category || 'General', purpose: purpose || 'faq', tags: tags || [], status: 'published' };
 }
 
 // ── category config ───────────────────────────────────────────────────────────
 
-type CategoryFilter = 'all' | 'manual' | 'ai' | 'objections' | 'docs';
+type CategoryFilter = 'all' | 'faq' | 'business' | 'sales_scripts' | 'policy' | 'docs';
 
 const CATEGORY_FILTERS: { id: CategoryFilter; label: string }[] = [
-  { id: 'all',       label: 'Todos' },
-  { id: 'manual',    label: 'Manual' },
-  { id: 'ai',        label: 'IA aprendido' },
-  { id: 'objections', label: 'Objeciones' },
-  { id: 'docs',      label: 'Documentos' },
+  { id: 'all',           label: 'Todos' },
+  { id: 'faq',           label: 'Preguntas' },
+  { id: 'business',      label: 'Pitch' },
+  { id: 'sales_scripts', label: 'Objeciones' },
+  { id: 'policy',        label: 'Políticas' },
+  { id: 'docs',          label: 'Documentos' },
 ];
 
 function categoryOfItem(item: KnowledgeListItem): CategoryFilter {
   if (item.kind === 'archivo') return 'docs';
-  const cat = (item.rawArticle?.category || '').toLowerCase();
-  if (cat === 'ai_aprendido') return 'ai';
-  if (cat === 'objeciones detectadas') return 'objections';
-  return 'manual';
+  const purpose = (item.rawArticle?.purpose || '').toLowerCase();
+  if (purpose === 'business') return 'business';
+  if (purpose === 'sales_scripts') return 'sales_scripts';
+  if (purpose === 'policy') return 'policy';
+  return 'faq';
 }
 
 // ── stat chip ─────────────────────────────────────────────────────────────────
@@ -120,6 +128,8 @@ function CandidateRow({
 }) {
   const isLlm = (item.metadata as Record<string, unknown>)?.source === 'llm';
   const tags: string[] = ((item.metadata as Record<string, unknown>)?.tags as string[]) || [];
+  const sourceLabel = String((item.metadata as Record<string, unknown>)?.source_label || '').trim();
+  const resolutionLabel = String((item.metadata as Record<string, unknown>)?.resolution_label || '').trim();
   const pct = Math.round((item.confidence || 0) * 100);
   const kindColor = KIND_COLORS[item.kind] || 'bg-ink-50 text-ink-600 border-ink-200/60';
 
@@ -142,6 +152,16 @@ function CandidateRow({
               <span className="inline-flex items-center gap-1 rounded-full border border-brand-200/60 bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-600">
                 <Bot size={9} />
                 LLM
+              </span>
+            )}
+            {sourceLabel && (
+              <span className="inline-flex items-center rounded-full border border-[rgba(17,17,16,0.10)] bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-ink-600">
+                {sourceLabel}
+              </span>
+            )}
+            {resolutionLabel && (
+              <span className="inline-flex items-center rounded-full border border-[rgba(17,17,16,0.10)] bg-[rgba(17,17,16,0.04)] px-2 py-0.5 text-[10px] font-semibold text-ink-600">
+                {resolutionLabel}
               </span>
             )}
             <span className="text-[10px] font-semibold text-ink-400">{pct}% confianza</span>
@@ -205,6 +225,7 @@ export function KnowledgeBasePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
@@ -298,23 +319,26 @@ export function KnowledgeBasePage() {
   }, [selectedItem]);
 
   // stats
-  const aiCount = articles.filter((a) => a.category === 'ai_aprendido').length;
+  const aiCount = articles.filter((a) => ['ai_aprendido', 'aprendizaje automatico', 'Resumen IA', 'FAQ extraído por IA'].includes(a.category || '')).length;
   const publishedCount = articles.filter((a) => a.status === 'published').length + documents.filter((d) => d.processing_status === 'ready').length;
   const categoryCounts: Record<CategoryFilter, number> = {
-    all: allItems.length,
-    manual: allItems.filter((i) => categoryOfItem(i) === 'manual').length,
-    ai: allItems.filter((i) => categoryOfItem(i) === 'ai').length,
-    objections: allItems.filter((i) => categoryOfItem(i) === 'objections').length,
-    docs: allItems.filter((i) => categoryOfItem(i) === 'docs').length,
+    all:           allItems.length,
+    faq:           allItems.filter((i) => categoryOfItem(i) === 'faq').length,
+    business:      allItems.filter((i) => categoryOfItem(i) === 'business').length,
+    sales_scripts: allItems.filter((i) => categoryOfItem(i) === 'sales_scripts').length,
+    policy:        allItems.filter((i) => categoryOfItem(i) === 'policy').length,
+    docs:          allItems.filter((i) => categoryOfItem(i) === 'docs').length,
   };
 
   // ── article actions ──────────────────────────────────────────────────────────
 
-  async function handleCreateText(payload: { title: string; content: string }) {
+  async function handleCreateText(payload: { title: string; content: string; category?: string; purpose?: KBArticlePurpose; tags?: string[] }) {
     if (!payload.content.trim()) { showInfo('Agregar', 'El contenido no puede estar vacío.'); return; }
     setSaving(true);
     try {
-      const created = await api.createKnowledgeBaseArticle(buildPayload(payload.title, payload.content));
+      const created = await api.createKnowledgeBaseArticle(
+        buildPayload(payload.title, payload.content, payload.category, payload.purpose, payload.tags),
+      );
       setArticles((prev) => [created, ...prev]);
       setSelectedId(created.id);
       setCategoryFilter('all');
@@ -359,6 +383,7 @@ export function KnowledgeBasePage() {
 
   async function handleDeleteSelected() {
     if (!selectedItem) return;
+    setConfirmDelete(false);
     setSaving(true);
     try {
       if (selectedItem.rawArticle) {
@@ -536,7 +561,10 @@ export function KnowledgeBasePage() {
                   onContentChange={setDraftContent}
                   onPurposeChange={setDraftPurpose}
                   onSave={() => void handleSaveSelected()}
-                  onDelete={() => void handleDeleteSelected()}
+                  onDelete={() => setConfirmDelete(true)}
+                  onItemAdded={() => {
+                    void loadKnowledge({ silent: true });
+                  }}
                 />
               </div>
             )}
@@ -666,6 +694,32 @@ export function KnowledgeBasePage() {
           onCreateLink={handleCreateLink}
           onUploadFile={handleUploadFile}
         />
+
+        {/* Delete confirmation */}
+        {confirmDelete && selectedItem && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded-3xl border border-[rgba(17,17,16,0.10)] bg-white p-6 shadow-xl">
+              <p className="text-[15px] font-bold text-ink-900">¿Eliminar esta fuente?</p>
+              <p className="mt-1.5 text-[13px] text-ink-400">
+                <span className="font-semibold text-ink-700">"{selectedItem.title}"</span> dejará de estar disponible para el agente de inmediato.
+              </p>
+              <div className="mt-5 flex gap-2">
+                <button
+                  onClick={() => void handleDeleteSelected()}
+                  className="flex-1 rounded-2xl bg-red-500 px-4 py-2.5 text-[13px] font-semibold text-white transition hover:bg-red-600"
+                >
+                  Eliminar
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="flex-1 rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white px-4 py-2.5 text-[13px] font-semibold text-ink-700 transition hover:bg-[rgba(17,17,16,0.04)]"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ExternalLink, Globe, Phone, Plug } from 'lucide-react';
+import { ExternalLink, Plug } from 'lucide-react';
 import { PageHeader } from '../components/ui/page-header';
+import { api } from '../services/api';
 
 interface CatalogItem {
   id: string;
@@ -16,7 +17,7 @@ interface CatalogItem {
 
 const CATALOG: CatalogItem[] = [
   { id: 'whatsapp-business', nombre: 'WhatsApp Business', categoria: 'Canal', descripcion: 'Gestiona la conexion del numero, webhook, templates y salud operativa del canal.', color: 'bg-emerald-500', initials: 'WA', estado: 'proximo' },
-  { id: 'web-widget', nombre: 'Web Widget', categoria: 'Canal', descripcion: 'Configura launcher, apariencia, dominio, seguridad y comportamiento del chat web.', color: 'bg-sky-500', initials: 'WB', estado: 'disponible', path: '/webapp' },
+  { id: 'web-widget', nombre: 'Web Widget', categoria: 'Canal', descripcion: 'Configura launcher, apariencia, dominio, seguridad y comportamiento del chat web.', color: 'bg-sky-500', initials: 'WB', estado: 'disponible', path: '/web-widget' },
   { id: 'app-chat', nombre: 'App Chat', categoria: 'Canal', descripcion: 'Canal embebido para apps iOS y Android con identidad, handoff e instalacion guiada.', color: 'bg-indigo-500', initials: 'AC', estado: 'disponible', path: '/app-chat' },
   { id: 'salesforce', nombre: 'Salesforce', categoria: 'Integracion', descripcion: 'CRM para gestion comercial, contactos y oportunidades.', color: 'bg-blue-500', initials: 'SF', estado: 'proximo' },
   { id: 'hubspot', nombre: 'HubSpot', categoria: 'Integracion', descripcion: 'Marketing, ventas y servicio al cliente en una sola plataforma.', color: 'bg-orange-400', initials: 'HS', estado: 'proximo' },
@@ -40,8 +41,22 @@ const CAT_PILL: Record<string, string> = {
 };
 
 export function IntegrationsPage() {
-  const availableItems = useMemo(() => CATALOG.filter((i) => i.estado === 'disponible'), []);
-  const upcomingItems  = useMemo(() => CATALOG.filter((i) => i.estado === 'proximo'), []);
+  const availableItems = CATALOG.filter((i) => i.estado === 'disponible');
+  const upcomingItems  = CATALOG.filter((i) => i.estado === 'proximo');
+
+  const [channelStatus, setChannelStatus] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    Promise.allSettled([
+      api.getWebWidgetConnection(),
+      api.getAppChatConnection(),
+    ]).then(([webResult, appResult]) => {
+      setChannelStatus({
+        'web-widget': webResult.status === 'fulfilled' ? (webResult.value.is_active ?? false) : false,
+        'app-chat':   appResult.status === 'fulfilled' ? (appResult.value.is_active ?? false) : false,
+      });
+    });
+  }, []);
 
   return (
     <div className="page-shell overflow-hidden">
@@ -71,126 +86,100 @@ export function IntegrationsPage() {
               </h2>
             </div>
             <div className="grid max-h-full gap-2.5 overflow-y-auto p-4 md:grid-cols-2">
-              {availableItems.map((item) => (
+              {availableItems.map((item) => {
+                const isActive = channelStatus[item.id] ?? false;
+                return (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl p-4 transition-all duration-150 hover:shadow-soft hover:-translate-y-px"
+                    style={{ border: '1px solid rgba(17,17,16,0.07)', background: 'rgba(255,255,255,0.70)' }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold text-white ${item.color}`}>
+                        {item.initials}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-[13px] font-semibold text-ink-900">{item.nombre}</p>
+                          {isActive ? (
+                            <span
+                              className="rounded-full bg-brand-200/60 px-2 py-0.5 text-[9px] font-bold text-brand-700"
+                              style={{ letterSpacing: '0.08em' }}
+                            >
+                              ACTIVO
+                            </span>
+                          ) : (
+                            <span
+                              className="rounded-full bg-ink-100/60 px-2 py-0.5 text-[9px] font-bold text-ink-400"
+                              style={{ letterSpacing: '0.08em' }}
+                            >
+                              INACTIVO
+                            </span>
+                          )}
+                        </div>
+                        <span
+                          className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase ${CAT_PILL[item.categoria]}`}
+                          style={{ letterSpacing: '0.1em' }}
+                        >
+                          {item.categoria}
+                        </span>
+                        <p className="mt-1.5 text-[11px] leading-relaxed text-ink-400">{item.descripcion}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <Link
+                        to={item.path ?? '/integrations'}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-brand-500 px-4 py-1.5 text-[11px] font-semibold text-white shadow-card transition-all duration-150 hover:bg-brand-500 hover:-translate-y-px"
+                      >
+                        Gestionar <ExternalLink size={11} />
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Upcoming */}
+          <section
+            className="min-h-0 overflow-hidden rounded-3xl"
+            style={{ border: '1px solid rgba(17,17,16,0.08)', background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(12px)' }}
+          >
+            <div
+              className="px-5 py-3.5"
+              style={{ borderBottom: '1px solid rgba(17,17,16,0.07)' }}
+            >
+              <h2 className="text-[12px] font-semibold text-ink-500" style={{ letterSpacing: '0.06em' }}>
+                PROXIMAMENTE
+              </h2>
+            </div>
+            <div className="grid max-h-full gap-2 overflow-y-auto p-3 sm:grid-cols-2 xl:grid-cols-1">
+              {upcomingItems.map((item) => (
                 <div
                   key={item.id}
-                  className="rounded-2xl p-4 transition-all duration-150 hover:shadow-soft hover:-translate-y-px"
-                  style={{ border: '1px solid rgba(17,17,16,0.07)', background: 'rgba(255,255,255,0.70)' }}
+                  className="rounded-xl p-3"
+                  style={{ border: '1px solid rgba(17,17,16,0.06)', background: 'rgba(17,17,16,0.02)' }}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold text-white ${item.color}`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[10px] font-bold text-white ${item.color}`}>
                       {item.initials}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="text-[13px] font-semibold text-ink-900">{item.nombre}</p>
-                        <span
-                          className="rounded-full bg-brand-200/60 px-2 py-0.5 text-[9px] font-bold text-brand-700"
-                          style={{ letterSpacing: '0.08em' }}
-                        >
-                          ACTIVO
-                        </span>
-                      </div>
+                      <p className="truncate text-[12px] font-semibold text-ink-800">{item.nombre}</p>
                       <span
-                        className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase ${CAT_PILL[item.categoria]}`}
+                        className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase ${CAT_PILL[item.categoria]}`}
                         style={{ letterSpacing: '0.1em' }}
                       >
                         {item.categoria}
                       </span>
-                      <p className="mt-1.5 text-[11px] leading-relaxed text-ink-400">{item.descripcion}</p>
                     </div>
                   </div>
-                  <div className="mt-3">
-                    <Link
-                      to={item.path ?? '/integrations'}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-brand-500 px-4 py-1.5 text-[11px] font-semibold text-white shadow-card transition-all duration-150 hover:bg-brand-500 hover:-translate-y-px"
-                    >
-                      Gestionar <ExternalLink size={11} />
-                    </Link>
-                  </div>
+                  <p className="mt-2 text-[11px] leading-relaxed text-ink-400">{item.descripcion}</p>
                 </div>
               ))}
             </div>
           </section>
 
-          <div className="grid min-h-0 gap-3 xl:grid-rows-[minmax(0,1fr)_auto]">
-            {/* Upcoming */}
-            <section
-              className="min-h-0 overflow-hidden rounded-3xl"
-              style={{ border: '1px solid rgba(17,17,16,0.08)', background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(12px)' }}
-            >
-              <div
-                className="px-5 py-3.5"
-                style={{ borderBottom: '1px solid rgba(17,17,16,0.07)' }}
-              >
-                <h2 className="text-[12px] font-semibold text-ink-500" style={{ letterSpacing: '0.06em' }}>
-                  PROXIMAMENTE
-                </h2>
-              </div>
-              <div className="grid max-h-full gap-2 overflow-y-auto p-3 sm:grid-cols-2 xl:grid-cols-1">
-                {upcomingItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-xl p-3"
-                    style={{ border: '1px solid rgba(17,17,16,0.06)', background: 'rgba(17,17,16,0.02)' }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[10px] font-bold text-white ${item.color}`}>
-                        {item.initials}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12px] font-semibold text-ink-800">{item.nombre}</p>
-                        <span
-                          className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase ${CAT_PILL[item.categoria]}`}
-                          style={{ letterSpacing: '0.1em' }}
-                        >
-                          {item.categoria}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="mt-2 text-[11px] leading-relaxed text-ink-400">{item.descripcion}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            {/* MVP channels info */}
-            <section className="page-section-card">
-              <h2 className="text-[12px] font-semibold text-ink-700" style={{ letterSpacing: '0.06em' }}>
-                CANALES DEL MVP
-              </h2>
-              <div className="mt-3 grid gap-2 md:grid-cols-2">
-                {[
-                  { Icon: Globe, color: 'text-sky-500', bg: 'bg-sky-50/70', title: 'Web Widget', desc: 'Configuracion del launcher, apariencia, dominios autorizados y snippet de instalacion.' },
-                  { Icon: Phone, color: 'text-indigo-500', bg: 'bg-indigo-50/70', title: 'App Chat', desc: 'Canal embebido para apps moviles, seguridad por bundle/package y flujo SDK.' },
-                ].map(({ Icon, color, bg, title, desc }) => (
-                  <div
-                    key={title}
-                    className="rounded-2xl p-3"
-                    style={{ border: '1px solid rgba(17,17,16,0.07)', background: 'rgba(17,17,16,0.02)' }}
-                  >
-                    <div className={`flex h-7 w-7 items-center justify-center rounded-xl ${bg} ${color}`}>
-                      <Icon size={13} />
-                    </div>
-                    <p className="mt-2 text-[12px] font-semibold text-ink-800">{title}</p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-ink-400">{desc}</p>
-                  </div>
-                ))}
-                <div
-                  className="rounded-2xl p-3 md:col-span-2"
-                  style={{ border: '1px solid rgba(17,17,16,0.07)', background: 'rgba(17,17,16,0.02)' }}
-                >
-                  <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-blue-50/70 text-blue-600">
-                    <Plug size={13} />
-                  </div>
-                  <p className="mt-2 text-[12px] font-semibold text-ink-800">Base de datos externa</p>
-                  <p className="mt-1 text-[11px] leading-relaxed text-ink-400">
-                    Mas adelante podras conectar una base externa para consultar informacion operativa desde conversaciones.
-                  </p>
-                </div>
-              </div>
-            </section>
-          </div>
         </div>
       </div>
     </div>

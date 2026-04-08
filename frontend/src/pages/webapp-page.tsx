@@ -21,7 +21,6 @@ interface WebWidgetSettings {
   enabled: boolean;
   organizationSlug: string;
   widgetName: string;
-  greetingMessage: string;
   brandColor: string;
   position: 'bottom-right' | 'bottom-left';
   allowedDomains: string[];
@@ -40,7 +39,6 @@ const DEFAULT_SETTINGS: WebWidgetSettings = {
   enabled: false,
   organizationSlug: '',
   widgetName: 'Asistente web',
-  greetingMessage: 'Hola. En que podemos ayudarte hoy?',
   brandColor: '#0f766e',
   position: 'bottom-right',
   allowedDomains: [],
@@ -60,7 +58,6 @@ function mapApiConnectionToUi(connection: WebWidgetConnectionApiItem): WebWidget
     enabled: connection.is_active,
     organizationSlug: connection.organization_slug,
     widgetName: connection.widget_name,
-    greetingMessage: connection.greeting_message,
     brandColor: connection.brand_color,
     position: connection.position === 'bottom-left' ? 'bottom-left' : 'bottom-right',
     allowedDomains: connection.allowed_domains ?? [],
@@ -136,7 +133,7 @@ function StatPill({ label, value }: { label: string; value: string }) {
   );
 }
 
-function WebWidgetPreview({ settings }: { settings: WebWidgetSettings }) {
+function WebWidgetPreview({ settings, agentGreeting }: { settings: WebWidgetSettings; agentGreeting: string }) {
   const launcherJustify = settings.position === 'bottom-left' ? 'justify-start' : 'justify-end';
 
   return (
@@ -185,7 +182,7 @@ function WebWidgetPreview({ settings }: { settings: WebWidgetSettings }) {
                 <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
                   <div className="flex justify-start">
                     <div className="max-w-[82%] rounded-[18px] rounded-bl-md border border-[rgba(17,17,16,0.08)] bg-white px-3.5 py-3 text-[13px] leading-[1.45] text-ink-800 shadow-card">
-                      {settings.greetingMessage || 'Hola. En que podemos ayudarte hoy?'}
+                      {agentGreeting || 'Hola. En que podemos ayudarte hoy?'}
                     </div>
                   </div>
                   <div className="flex justify-end">
@@ -226,6 +223,7 @@ const selectClass = `${inputClass} cursor-pointer appearance-none`;
 export function WebAppPage() {
   const { showError, showSuccess } = useNotification();
   const [settings, setSettings] = useState<WebWidgetSettings>(DEFAULT_SETTINGS);
+  const [agentGreeting, setAgentGreeting] = useState('');
   const [domainInput, setDomainInput] = useState('');
   const [testMessage, setTestMessage] = useState('Hola, quiero ayuda para comprar');
   const [sendingTest, setSendingTest] = useState(false);
@@ -238,9 +236,14 @@ export function WebAppPage() {
 
     async function loadConnection() {
       try {
-        const data = await api.getWebWidgetConnection();
+        const [data, profile] = await Promise.all([
+          api.getWebWidgetConnection(),
+          api.getOnboardingProfile(),
+        ]);
         if (cancelled) return;
         setSettings(mapApiConnectionToUi(data));
+        const greeting = profile.sales_agent_profile?.greeting_message || profile.general_agent_profile?.greeting_message || '';
+        setAgentGreeting(greeting);
       } catch (error) {
         if (cancelled) return;
         showError('Web Widget', error instanceof Error ? error.message : 'No se pudo cargar la configuracion del widget.');
@@ -283,7 +286,6 @@ export function WebAppPage() {
       const updated = await api.updateWebWidgetConnection({
         is_active: settings.enabled,
         widget_name: settings.widgetName,
-        greeting_message: settings.greetingMessage,
         brand_color: settings.brandColor,
         position: settings.position,
         allowed_domains: settings.allowedDomains,
@@ -387,13 +389,13 @@ export function WebAppPage() {
               </div>
               <div className="mt-3">
                 <Field label="Mensaje de bienvenida">
-                  <textarea
-                    value={settings.greetingMessage}
-                    onChange={(event) => set('greetingMessage', event.target.value)}
-                    rows={3}
-                    className={inputClass}
-                    style={{ resize: 'none' }}
-                  />
+                  <div className="rounded-xl border border-[rgba(17,17,16,0.09)] bg-[rgba(17,17,16,0.02)] px-3 py-2.5">
+                    <p className="text-[13px] text-ink-700 leading-relaxed">{agentGreeting || <span className="text-ink-400 italic">Sin mensaje configurado</span>}</p>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <span className="text-[10px] text-ink-400">Configurable en</span>
+                      <Link to="/admin/agents" className="text-[10px] font-semibold text-brand-600 hover:underline">Agentes → Identidad →</Link>
+                    </div>
+                  </div>
                 </Field>
               </div>
             </SectionCard>
@@ -518,7 +520,7 @@ export function WebAppPage() {
                     {settings.enabled ? 'Activo' : 'Borrador'}
                   </span>
                 </div>
-                <WebWidgetPreview settings={settings} />
+                <WebWidgetPreview settings={settings} agentGreeting={agentGreeting} />
                 <div className="flex justify-center border-t border-[rgba(17,17,16,0.07)] py-3">
                   {settings.publicDemoUrl ? (
                     <a href={settings.publicDemoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-1.5 text-[11px] font-semibold text-ink-700 transition hover:bg-white">

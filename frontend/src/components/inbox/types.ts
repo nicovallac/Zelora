@@ -60,6 +60,7 @@ export interface InboxConversationSummary {
   apiStatus: Status;
   commercialStatus: InboxCommercialStatus;
   owner: InboxOwner;
+  activeAiAgent?: 'general' | 'sales' | 'marketing' | 'operations' | '';
   priority: InboxPriority;
   followUp: boolean;
   opportunity: boolean;
