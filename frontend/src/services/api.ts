@@ -1002,14 +1002,130 @@ export interface QuickKnowledgeFileItem {
   uploaded_at: string;
 }
 
+// ── Shared sub-types ──────────────────────────────────────────────────────────
+
+export interface BrandProfileConfig {
+  tone_of_voice?: string;
+  formality_level?: string;
+  brand_personality?: string;
+  value_proposition?: string;
+  key_differentiators?: string[];
+  preferred_closing_style?: string;
+  urgency_style?: string;
+  recommended_phrases?: string[];
+  avoid_phrases?: string[];
+  customer_style_notes?: string;
+}
+
+export interface CommerceRulesConfig {
+  discount_policy?: string;
+  negotiation_policy?: string;
+  inventory_promise_rule?: string;
+  delivery_promise_rule?: string;
+  return_policy_summary?: string;
+  forbidden_claims?: string[];
+  forbidden_promises?: string[];
+}
+
+export interface SalesPlaybookConfig {
+  opening_style?: string;
+  recommendation_style?: string;
+  objection_style?: string;
+  closing_style?: string;
+  follow_up_style?: string;
+  upsell_style?: string;
+  escalate_conditions?: string[];
+  competitor_response?: string;
+}
+
+export interface BuyerModelConfig {
+  purchase_signals?: string[];
+  bulk_buyer_signals?: string[];
+  low_intent_signals?: string[];
+  common_objections?: string[];
+  ideal_buyers?: string[];
+}
+
+// ── V2 canonical blocks ───────────────────────────────────────────────────────
+
+export interface OrgProfileConfig {
+  what_you_sell?: string;
+  who_you_sell_to?: string;
+  payment_methods?: string[];
+  website?: string;
+  industry?: string;
+  country?: string;
+  brand?: BrandProfileConfig;
+}
+
+export interface GeneralAgentConfig {
+  enabled?: boolean;
+  name?: string;
+  persona?: string;
+  greeting_message?: string;
+  mission_statement?: string;
+  scope_notes?: string;
+  allowed_topics?: string[];
+  blocked_topics?: string[];
+  handoff_to_sales_when?: string[];
+  handoff_to_human_when?: string[];
+  out_of_scope_action?: 'reply' | 'ignore' | 'escalate';
+  response_language?: 'auto' | 'es' | 'en';
+  max_response_length?: 'brief' | 'standard' | 'detailed';
+  handoff_mode?: 'temprano' | 'balanceado' | 'estricto';
+  model_name?: string;
+  max_kb_snippets?: number;
+}
+
+export interface SalesAgentConfig {
+  enabled?: boolean;
+  name?: string;
+  persona?: string;
+  greeting_message?: string;
+  mission_statement?: string;
+  response_language?: 'auto' | 'es' | 'en';
+  max_response_length?: 'brief' | 'standard' | 'detailed';
+  model_name?: string;
+  autonomy_level?: 'asistido' | 'semi_autonomo' | 'full';
+  handoff_mode?: 'temprano' | 'balanceado' | 'estricto';
+  followup_mode?: 'apagado' | 'suave' | 'activo';
+  max_followups?: number;
+  recommendation_depth?: 1 | 2 | 3;
+  competitor_response?: string;
+  shipping_policy?: string;
+  shipping_coverage?: string;
+  shipping_avg_days?: string;
+  min_order_units?: number;
+  max_units_auto_approve?: number;
+  returns_window_days?: number;
+  playbook?: SalesPlaybookConfig;
+  buyer_model?: BuyerModelConfig;
+  commerce_rules?: CommerceRulesConfig;
+}
+
+export interface AiPlatformConfig {
+  provider?: string;
+  copilot_model?: string;
+  summary_model?: string;
+  temperature?: number;
+  max_tokens?: number;
+  confidence_threshold?: number;
+  copilot_suggestions?: 2 | 3 | 5;
+  sentiment_analysis?: boolean;
+  auto_summary?: boolean;
+  qa_scoring?: boolean;
+}
+
+// ── Main interface ────────────────────────────────────────────────────────────
+
 export interface OnboardingProfileApiItem {
+  settings_version?: 1 | 2;
   organization_name: string;
   website: string;
   timezone: string;
   tax_id: string;
   contact_email: string;
   contact_phone: string;
-  payment_methods: string[];
   payment_settings: {
     bank_transfer_enabled?: boolean;
     cash_enabled?: boolean;
@@ -1022,10 +1138,22 @@ export interface OnboardingProfileApiItem {
     payment_link_enabled?: boolean;
     payment_link_url?: string;
   };
-  what_you_sell: string;
-  who_you_sell_to: string;
-  general_agent_name: string;
-  general_agent_profile: {
+  // ── V2 canonical blocks (preferred) ──────────────────────────────────────
+  org_profile?: OrgProfileConfig;
+  general_agent?: GeneralAgentConfig;
+  sales_agent?: SalesAgentConfig;
+  ai_platform?: AiPlatformConfig;
+  // ── V1 legacy fields (still accepted by backend normalizer) ──────────────
+  /** @deprecated use org_profile.what_you_sell */
+  what_you_sell?: string;
+  /** @deprecated use org_profile.who_you_sell_to */
+  who_you_sell_to?: string;
+  /** @deprecated use org_profile.payment_methods */
+  payment_methods?: string[];
+  /** @deprecated use general_agent block */
+  general_agent_name?: string;
+  /** @deprecated use general_agent block */
+  general_agent_profile?: {
     agent_persona?: string;
     mission_statement?: string;
     scope_notes?: string;
@@ -1036,8 +1164,10 @@ export interface OnboardingProfileApiItem {
     response_language?: 'auto' | 'es' | 'en';
     greeting_message?: string;
   };
-  sales_agent_name: string;
-  sales_agent_profile: {
+  /** @deprecated use sales_agent block */
+  sales_agent_name?: string;
+  /** @deprecated use sales_agent block */
+  sales_agent_profile?: {
     agent_persona?: string;
     mission_statement?: string;
     industry?: string;
@@ -1048,118 +1178,21 @@ export interface OnboardingProfileApiItem {
     competitor_response?: string;
     payment_methods?: string[];
     shipping_policy?: string;
-    brand_profile?: {
-      tone_of_voice?: string;
-      formality_level?: string;
-      brand_personality?: string;
-      value_proposition?: string;
-      key_differentiators?: string[];
-      preferred_closing_style?: string;
-      urgency_style?: string;
-      recommended_phrases?: string[];
-      avoid_phrases?: string[];
-      customer_style_notes?: string;
-    };
-    sales_playbook?: {
-      opening_style?: string;
-      recommendation_style?: string;
-      objection_style?: string;
-      closing_style?: string;
-      follow_up_style?: string;
-      upsell_style?: string;
-      escalate_conditions?: string[];
-      competitor_response?: string;
-    };
-    buyer_model?: {
-      ideal_buyers?: string[];
-      common_objections?: string[];
-      purchase_signals?: string[];
-      low_intent_signals?: string[];
-      bulk_buyer_signals?: string[];
-    };
-    commerce_rules?: {
-      payment_methods?: string[];
-      shipping_policy?: string;
-      discount_policy?: string;
-      negotiation_policy?: string;
-      inventory_promise_rule?: string;
-      delivery_promise_rule?: string;
-      return_policy_summary?: string;
-      forbidden_claims?: string[];
-      forbidden_promises?: string[];
-    };
+    brand_profile?: BrandProfileConfig;
+    sales_playbook?: SalesPlaybookConfig;
+    buyer_model?: BuyerModelConfig;
+    commerce_rules?: CommerceRulesConfig & { payment_methods?: string[]; shipping_policy?: string };
   };
-  quick_knowledge_text: string;
-  quick_knowledge_links: string[];
-  quick_knowledge_files: QuickKnowledgeFileItem[];
-  activation_tasks: {
-    knowledge_status?: 'pending' | 'in_progress' | 'completed';
-    channels_status?: 'pending' | 'in_progress' | 'completed';
-    agent_test_status?: 'pending' | 'in_progress' | 'completed';
-    agent_tested_at?: string | null;
-  };
-  initial_onboarding_completed: boolean;
-  brand_profile: {
-    tone_of_voice?: string;
-    formality_level?: string;
-    brand_personality?: string;
-    value_proposition?: string;
-    key_differentiators?: string[];
-    preferred_closing_style?: string;
-    urgency_style?: string;
-    recommended_phrases?: string[];
-    avoid_phrases?: string[];
-    customer_style_notes?: string;
-  };
-  sales_playbook: {
-    opening_style?: string;
-    recommendation_style?: string;
-    objection_style?: string;
-    closing_style?: string;
-    follow_up_style?: string;
-    upsell_style?: string;
-    escalate_conditions?: string[];
-  };
-  buyer_model: {
-    ideal_buyers?: string[];
-    common_objections?: string[];
-    purchase_signals?: string[];
-    low_intent_signals?: string[];
-    bulk_buyer_signals?: string[];
-  };
-  commerce_rules: {
-    payment_methods?: string[];
-    shipping_policy?: string;
-    discount_policy?: string;
-    negotiation_policy?: string;
-    inventory_promise_rule?: string;
-    delivery_promise_rule?: string;
-    return_policy_summary?: string;
-    forbidden_claims?: string[];
-    forbidden_promises?: string[];
-  };
-  locale_settings: {
-    language?: string;
-    date_format?: string;
-    default_response_language?: boolean;
-    session_timeout_minutes?: number;
-    business_hours?: Array<{ dia: string; label: string; activo: boolean; inicio: string; fin: string }>;
-    sla_minutes?: number;
-    auto_escalate_minutes?: number;
-    off_hours_message?: string;
-    sla_threshold?: number;
-  };
-  notification_settings: {
-    items?: Array<{
-      key: string;
-      label: string;
-      email: boolean;
-      whatsapp: boolean;
-      browser: boolean;
-      enabled: boolean;
-    }>;
-  };
-  ai_preferences: {
+  /** @deprecated use org_profile.brand */
+  brand_profile?: BrandProfileConfig;
+  /** @deprecated use sales_agent.playbook */
+  sales_playbook?: SalesPlaybookConfig;
+  /** @deprecated use sales_agent.buyer_model */
+  buyer_model?: BuyerModelConfig;
+  /** @deprecated use sales_agent.commerce_rules */
+  commerce_rules?: CommerceRulesConfig & { payment_methods?: string[]; shipping_policy?: string };
+  /** @deprecated use ai_platform + general_agent/sales_agent blocks */
+  ai_preferences?: {
     provider?: string;
     copilot_model?: string;
     summary_model?: string;
@@ -1186,6 +1219,38 @@ export interface OnboardingProfileApiItem {
       handoff_mode?: 'temprano' | 'balanceado' | 'estricto';
       max_response_length?: 'brief' | 'standard' | 'detailed';
     };
+  };
+  // ── Non-agent fields (unchanged) ─────────────────────────────────────────
+  quick_knowledge_text: string;
+  quick_knowledge_links: string[];
+  quick_knowledge_files: QuickKnowledgeFileItem[];
+  activation_tasks: {
+    knowledge_status?: 'pending' | 'in_progress' | 'completed';
+    channels_status?: 'pending' | 'in_progress' | 'completed';
+    agent_test_status?: 'pending' | 'in_progress' | 'completed';
+    agent_tested_at?: string | null;
+  };
+  initial_onboarding_completed: boolean;
+  locale_settings: {
+    language?: string;
+    date_format?: string;
+    default_response_language?: boolean;
+    session_timeout_minutes?: number;
+    business_hours?: Array<{ dia: string; label: string; activo: boolean; inicio: string; fin: string }>;
+    sla_minutes?: number;
+    auto_escalate_minutes?: number;
+    off_hours_message?: string;
+    sla_threshold?: number;
+  };
+  notification_settings: {
+    items?: Array<{
+      key: string;
+      label: string;
+      email: boolean;
+      whatsapp: boolean;
+      browser: boolean;
+      enabled: boolean;
+    }>;
   };
   optimization_profile: {
     status?: string;
