@@ -180,13 +180,14 @@ class SignupAvailabilitySerializer(serializers.Serializer):
 class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.ReadOnlyField()
     avatar_url = serializers.SerializerMethodField()
+    organization_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             'id', 'email', 'nombre', 'apellido', 'telefono', 'avatar', 'avatar_url',
             'rol', 'is_active', 'is_available', 'max_concurrent_chats',
-            'last_seen', 'full_name', 'created_at',
+            'last_seen', 'full_name', 'created_at', 'organization_name',
         ]
         read_only_fields = ['id', 'created_at', 'last_seen']
 
@@ -197,6 +198,9 @@ class UserSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.avatar.url)
             return obj.avatar.url
         return None
+
+    def get_organization_name(self, obj):
+        return obj.organization.name if obj.organization else None
 
 
 class UserCreateSerializer(serializers.ModelSerializer):

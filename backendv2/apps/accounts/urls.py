@@ -3,6 +3,8 @@ Accounts URL configuration.
 
 /api/auth/login/                → POST — JWT login
 /api/auth/signup/               → POST — Create org + admin user
+/api/auth/verify-email/         → POST — Verify email with token
+/api/auth/resend-verification/  → POST — Resend verification email
 /api/auth/token/refresh/        → POST — Refresh JWT
 /api/auth/agents/               → GET (admin), POST (admin) — agent list/create
 /api/auth/agents/{id}/          → GET/PUT/PATCH/DELETE — agent detail
@@ -19,6 +21,8 @@ from .views import (
     LoginView,
     SignupView,
     SignupAvailabilityView,
+    VerifyEmailView,
+    ResendVerificationView,
     AgentViewSet,
     ContactViewSet,
     OrganizationView,
@@ -37,6 +41,8 @@ urlpatterns = [
     path('login/', LoginView.as_view(), name='token_obtain_pair'),
     path('signup/', SignupView.as_view(), name='signup'),
     path('signup-availability/', SignupAvailabilityView.as_view(), name='signup-availability'),
+    path('verify-email/', VerifyEmailView.as_view(), name='verify-email'),
+    path('resend-verification/', ResendVerificationView.as_view(), name='resend-verification'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('token/blacklist/', TokenBlacklistView.as_view(), name='token_blacklist'),
 

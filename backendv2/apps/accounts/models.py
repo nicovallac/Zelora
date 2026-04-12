@@ -117,6 +117,10 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
+    # Email verification
+    email_verified = models.BooleanField(default=False)
+    email_verified_at = models.DateTimeField(null=True, blank=True)
+
     # MFA (future)
     mfa_enabled = models.BooleanField(default=False)
     mfa_secret = models.CharField(max_length=64, blank=True)
@@ -150,6 +154,33 @@ class User(AbstractBaseUser, PermissionsMixin):
         """Update last_seen timestamp — call on every authenticated request."""
         self.last_seen = timezone.now()
         self.save(update_fields=['last_seen'])
+
+
+# ─── Email Verification Token ──────────────────────────────────────────────────
+
+class EmailVerificationToken(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='verification_tokens'
+    )
+    token = models.CharField(max_length=86, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'email_verification_tokens'
+        indexes = [
+            models.Index(fields=['token']),
+            models.Index(fields=['user', 'used']),
+        ]
+
+    def __str__(self):
+        return f'VerificationToken({self.user.email}, used={self.used})'
+
+    @property
+    def is_valid(self) -> bool:
+        return not self.used and self.expires_at > timezone.now()
 
 
 # ─── Contact ────────────────────────────────────────────────────────────────────

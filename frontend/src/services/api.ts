@@ -333,6 +333,7 @@ export interface MyAgentProfileApiItem {
   last_seen?: string | null;
   full_name?: string;
   created_at: string;
+  organization_name?: string | null;
 }
 
 interface ContactApiListItem {
@@ -1434,10 +1435,25 @@ export const api = {
         apellido: string;
         email: string;
         rol: string;
+        organization_name?: string;
       };
     }>('/api/auth/login/', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    }),
+  verifyEmail: (token: string) =>
+    fetchApi<{
+      access: string;
+      refresh: string;
+      user: { id: string; nombre: string; apellido: string; email: string; rol: string; organization_name?: string };
+    }>('/api/auth/verify-email/', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+  resendVerification: (email: string) =>
+    fetchApi<{ message: string }>('/api/auth/resend-verification/', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
     }),
   getMyAgentProfile: () => fetchApi<MyAgentProfileApiItem>('/api/auth/agents/me/'),
   updateMyAgentProfile: (data: { nombre?: string; apellido?: string; telefono?: string }) =>

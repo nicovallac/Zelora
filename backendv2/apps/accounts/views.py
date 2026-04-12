@@ -13,7 +13,9 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from .models import Organization, Contact, SecurityAuditLog
+from django.utils import timezone as django_timezone
+from .models import Organization, Contact, SecurityAuditLog, EmailVerificationToken
+from .email_utils import send_verification_email
 from .serializers import (
     CustomTokenObtainPairSerializer,
     OrganizationSerializer,
@@ -381,6 +383,13 @@ class LoginView(TokenObtainPairView):
             raise
 
         if response.status_code == 200 and target_user and org:
+            # Check email verification
+            if not target_user.email_verified:
+                return Response(
+                    {'detail': 'email_not_verified', 'email': target_user.email},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
             # Check IP allowlist
             security_settings = _get_org_security_settings(org)
             if _check_ip_blocked(security_settings, client_ip):
@@ -480,14 +489,116 @@ class SignupView(generics.CreateAPIView):
 
         logger.info('user_signup', user_id=str(user.id), org_id=str(org.id), org=company_name)
 
+        # Send verification email (non-blocking: log failure but don't break signup)
+        try:
+            send_verification_email(user)
+        except Exception as exc:
+            logger.error('signup_verification_email_failed', user_id=str(user.id), error=str(exc))
+
         return Response(
             {
-                'message': 'Account created successfully',
-                'org_id': str(org.id),
-                'user_id': str(user.id),
+                'message': 'Cuenta creada. Revisa tu email para verificar tu cuenta.',
+                'email': user.email,
+                'requires_email_verification': True,
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class VerifyEmailView(generics.GenericAPIView):
+    """
+    POST /api/auth/verify-email/
+    Validates a verification token, marks the user as verified, and returns JWT tokens.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        token_str = (request.data.get('token', '') or '').strip()
+        if not token_str:
+            return Response({'detail': 'token_required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            token_obj = EmailVerificationToken.objects.select_related('user').get(token=token_str)
+        except EmailVerificationToken.DoesNotExist:
+            return Response({'detail': 'token_invalid'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if token_obj.used:
+            return Response({'detail': 'token_already_used'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not token_obj.is_valid:
+            return Response({'detail': 'token_expired'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = token_obj.user
+        user.email_verified = True
+        user.email_verified_at = django_timezone.now()
+        user.save(update_fields=['email_verified', 'email_verified_at'])
+
+        token_obj.used = True
+        token_obj.save(update_fields=['used'])
+
+        # Generate JWT tokens so the user is logged in immediately after verification
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = RefreshToken.for_user(user)
+        access = refresh.access_token
+
+        logger.info('email_verified', user_id=str(user.id), email=user.email)
+
+        return Response({
+            'access': str(access),
+            'refresh': str(refresh),
+            'user': {
+                'id': str(user.id),
+                'nombre': user.nombre,
+                'apellido': user.apellido or '',
+                'email': user.email,
+                'rol': user.rol,
+                'organization_name': user.organization.name if user.organization else None,
+            },
+        }, status=status.HTTP_200_OK)
+
+
+class ResendVerificationView(generics.GenericAPIView):
+    """
+    POST /api/auth/resend-verification/
+    Resends the verification email. Rate limited to 3 sends per hour.
+    """
+    permission_classes = [AllowAny]
+
+    _MAX_RESENDS_PER_HOUR = 3
+
+    def post(self, request, *args, **kwargs):
+        email = (request.data.get('email', '') or '').strip().lower()
+        if not email:
+            return Response({'detail': 'email_required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(email__iexact=email)
+        except User.DoesNotExist:
+            # Don't leak whether the email exists
+            return Response({'message': 'Si el email esta registrado, recibirás un nuevo enlace.'})
+
+        if user.email_verified:
+            return Response({'detail': 'email_already_verified'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Rate limit: max N tokens created in the last hour
+        one_hour_ago = django_timezone.now() - django_timezone.timedelta(hours=1)
+        recent_count = EmailVerificationToken.objects.filter(
+            user=user, created_at__gte=one_hour_ago
+        ).count()
+        if recent_count >= self._MAX_RESENDS_PER_HOUR:
+            return Response(
+                {'detail': 'rate_limit_exceeded', 'message': 'Has solicitado demasiados emails. Intenta en una hora.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        try:
+            send_verification_email(user)
+        except Exception as exc:
+            logger.error('resend_verification_failed', user_id=str(user.id), error=str(exc))
+            return Response({'detail': 'send_failed'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        logger.info('verification_email_resent', user_id=str(user.id))
+        return Response({'message': 'Email de verificación reenviado.'})
 
 
 class SignupAvailabilityView(generics.GenericAPIView):

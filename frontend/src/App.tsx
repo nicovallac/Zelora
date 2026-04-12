@@ -22,6 +22,8 @@ const ProfilePage = lazy(() => import('./pages/profile-page').then(m => ({ defau
 const LoginPage = lazy(() => import('./pages/login-page').then(m => ({ default: m.LoginPage })));
 const OnboardingPage = lazy(() => import('./pages/onboarding-page'));
 const SignupPage = lazy(() => import('./pages/signup-page'));
+const EmailVerificationPendingPage = lazy(() => import('./pages/email-verification-pending-page'));
+const VerifyEmailPage = lazy(() => import('./pages/verify-email-page'));
 
 // Admin
 const AgentsPage = lazy(() => import('./pages/admin/agents-page').then(m => ({ default: m.AgentsPage })));
@@ -42,6 +44,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/email-verification-pending" element={<EmailVerificationPendingPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/web-widget/demo" element={<WebWidgetDemoPage />} />
         <Route path="/:orgSlug" element={<AppChatPublicPage />} />

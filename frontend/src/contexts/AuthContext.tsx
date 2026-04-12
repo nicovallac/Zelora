@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { api } from '../services/api';
+import { api, ApiError } from '../services/api';
 import { USE_MOCK_DATA } from '../lib/runtime';
 
 export interface AgentInfo {
@@ -8,6 +8,7 @@ export interface AgentInfo {
   nombre: string;
   email: string;
   rol: string;
+  organizationName?: string;
 }
 
 interface AuthContextValue {
@@ -29,12 +30,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Hydrate from localStorage on mount
   useEffect(() => {
+    const storedToken = localStorage.getItem('comfa_token');
+    const storedAgent = localStorage.getItem('comfa_agent');
+    if (!storedToken || !storedAgent) {
+      setInitialized(true);
+      return;
+    }
     try {
-      const storedToken = localStorage.getItem('comfa_token');
-      const storedAgent = localStorage.getItem('comfa_agent');
-      if (storedToken && storedAgent) {
-        setToken(storedToken);
-        setAgent(JSON.parse(storedAgent) as AgentInfo);
+      const parsed = JSON.parse(storedAgent) as AgentInfo;
+      setToken(storedToken);
+      setAgent(parsed);
+      // If organizationName is missing (old session), fetch it from the API
+      if (!parsed.organizationName) {
+        api.getMyAgentProfile().then((profile) => {
+          if (profile.organization_name) {
+            const updated = { ...parsed, organizationName: profile.organization_name };
+            localStorage.setItem('comfa_agent', JSON.stringify(updated));
+            setAgent(updated);
+          }
+        }).catch(() => undefined);
       }
     } catch {
       // ignore parse errors
@@ -54,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           nombre: [data.user.nombre, data.user.apellido].filter(Boolean).join(' ').trim() || data.user.nombre,
           email: data.user.email,
           rol: data.user.rol ?? 'asesor',
+          organizationName: data.user.organization_name,
         };
         localStorage.setItem('comfa_token', data.access);
         localStorage.setItem('comfa_refresh', data.refresh);
@@ -62,7 +77,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAgent(agentInfo);
         apiSuccess = true;
       }
-    } catch {
+    } catch (err) {
+      // 403 with email_not_verified → redirect to verification pending page
+      if (err instanceof ApiError && err.status === 403 && err.message === 'email_not_verified') {
+        sessionStorage.setItem('pending_verification_email', email);
+        window.location.href = '/email-verification-pending';
+        return;
+      }
       // network error — fall through to demo check
     }
 
@@ -92,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       nombre: profile.full_name?.trim() || [profile.nombre, profile.apellido].filter(Boolean).join(' ').trim() || profile.nombre,
       email: profile.email,
       rol: profile.rol ?? 'asesor',
+      organizationName: profile.organization_name ?? undefined,
     };
     localStorage.setItem('comfa_agent', JSON.stringify(agentInfo));
     setAgent(agentInfo);

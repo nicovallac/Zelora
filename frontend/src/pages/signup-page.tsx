@@ -139,8 +139,8 @@ export default function SignupPage() {
         password,
         plan: 'starter',
       });
-      await login(email.trim(), password);
-      navigate('/onboarding');
+      sessionStorage.setItem('pending_verification_email', email.trim());
+      navigate('/email-verification-pending');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'No se pudo crear la cuenta.';
       setError(message);
