@@ -20,7 +20,7 @@ function activeAgentMeta(agent?: InboxConversationDetail['activeAiAgent']) {
   }
   if (agent === 'general') {
     return {
-      label: 'General Agent activo',
+      label: 'Sales Agent activo',
       tone: 'bg-sky-100 text-sky-700',
     };
   }

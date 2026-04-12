@@ -87,6 +87,19 @@ export interface InboxConversationSummary {
 }
 
 export interface InboxConversationDetail extends InboxConversationSummary {
+  metadata?: Record<string, unknown>;
+  contactMemory?: {
+    conversation_count: number;
+    inferred_budget_min: number | null;
+    inferred_budget_max: number | null;
+    style_cues: Record<string, unknown>;
+    occasion_hints: string[];
+    category_preferences: string[];
+    last_products_shown: string[];
+    last_intent: string;
+    last_objection: string;
+    converted: boolean;
+  } | null;
   messages: MessageItem[];
   notes: InboxNote[];
   timeline: Array<{

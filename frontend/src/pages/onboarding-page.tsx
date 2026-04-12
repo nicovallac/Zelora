@@ -52,14 +52,6 @@ function emptyProfile(): OnboardingProfileApiItem {
     payment_settings: {},
     what_you_sell: '',
     who_you_sell_to: '',
-    general_agent_name: '',
-    general_agent_profile: {
-      agent_persona: '',
-      mission_statement: '',
-      scope_notes: '',
-      response_language: 'auto',
-      greeting_message: '',
-    },
     sales_agent_name: 'Sales Agent',
     sales_agent_profile: {
       agent_persona: '',
@@ -114,13 +106,6 @@ function emptyProfile(): OnboardingProfileApiItem {
       sentiment_analysis: true,
       auto_summary: true,
       qa_scoring: true,
-      general_agent: {
-        enabled: true,
-        trial_mode: true,
-        model_name: 'gpt-4.1-nano',
-        handoff_mode: 'balanceado',
-        max_response_length: 'brief',
-      },
     },
     optimization_profile: { status: 'not_started', last_updated_at: null },
     onboarding_status: 'draft',
@@ -155,9 +140,9 @@ export default function OnboardingPage() {
         if (cancelled) return;
         const nextProfile = { ...emptyProfile(), ...data };
         setProfile(nextProfile);
-        setAgentName(nextProfile.general_agent_name || '');
+        setAgentName(nextProfile.sales_agent_name || 'Sales Agent');
         setFormality((nextProfile.brand_profile?.formality_level as FormLevel) || 'balanced');
-        setGreeting(nextProfile.general_agent_profile?.greeting_message || '');
+        setGreeting(nextProfile.sales_agent_profile?.greeting_message || '');
         if (nextProfile.initial_onboarding_completed) {
           setStep(3);
         } else {
@@ -218,13 +203,13 @@ export default function OnboardingPage() {
 
   async function handleContinueFromBrand() {
     const saved = await persistProfile({
-      general_agent_name: agentName.trim() || 'Asistente',
+      sales_agent_name: agentName.trim() || 'Sales Agent',
       brand_profile: {
         ...(profile.brand_profile || {}),
         formality_level: formality,
       },
-      general_agent_profile: {
-        ...(profile.general_agent_profile || {}),
+      sales_agent_profile: {
+        ...(profile.sales_agent_profile || {}),
         greeting_message: greeting.trim(),
       },
       completed_step: 3,

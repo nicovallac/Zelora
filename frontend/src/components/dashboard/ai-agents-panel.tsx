@@ -1,4 +1,4 @@
-import { ShoppingCart, Megaphone, MessageSquare, Settings2, Zap, Clock, TrendingUp, Lock } from 'lucide-react';
+import { ShoppingCart, Megaphone, Settings2, Zap, Clock, TrendingUp, Lock } from 'lucide-react';
 
 interface AgentStat {
   label: string;
@@ -97,8 +97,6 @@ interface AIAgentsPanelProps {
   opportunitiesDetected: number;
   avgResponseTime: string;
   conversationsResolved: number;
-  generalConversations: number;
-  generalEscalated: number;
 }
 
 export function AIAgentsPanel({
@@ -106,26 +104,8 @@ export function AIAgentsPanel({
   opportunitiesDetected,
   avgResponseTime,
   conversationsResolved,
-  generalConversations,
-  generalEscalated,
 }: AIAgentsPanelProps) {
   const agents: AIAgentCardProps[] = [
-    {
-      icon: MessageSquare,
-      color: 'text-emerald-600',
-      bgColor: '#d1fae5',
-      name: 'General Agent',
-      role: 'Agente de soporte general',
-      description: 'Responde consultas frecuentes, orienta al usuario y lo deriva al agente correcto según su intención.',
-      status: 'active',
-      badge: 'Live',
-      stats: [
-        { label: 'Conversaciones', value: generalConversations > 0 ? String(generalConversations) : '—' },
-        { label: 'Escaladas', value: generalEscalated > 0 ? String(generalEscalated) : '—' },
-        { label: 'Resueltas', value: conversationsResolved > 0 ? String(conversationsResolved) : '—' },
-        { label: 'T. respuesta', value: avgResponseTime },
-      ],
-    },
     {
       icon: ShoppingCart,
       color: 'text-brand-600',
@@ -209,7 +189,7 @@ export function AIAgentsPanel({
       <div className="mt-4 flex items-center gap-1.5 border-t border-[rgba(17,17,16,0.05)] pt-3">
         <TrendingUp size={11} className="text-ink-400" />
         <p className="text-[11px] text-ink-400">
-          General Agent y Sales Agent trabajan en paralelo con tu equipo humano, activos en tu inbox.
+          Sales Agent trabaja en paralelo con tu equipo humano, activo en tu inbox.
         </p>
       </div>
     </div>

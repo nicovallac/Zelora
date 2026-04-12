@@ -64,9 +64,9 @@ function validate(form: AgentFormState, isEdit: boolean): string | null {
 // ── types ─────────────────────────────────────────────────────────────────────
 
 type AgentsTab = 'ia' | 'humanos';
-type ConfigTab = 'identidad' | 'ejecucion' | 'estrategia' | 'guardrails' | 'marca' | 'playbook' | 'buyer';
+type ConfigTab = 'identidad' | 'ejecucion' | 'estrategia' | 'guardrails' | 'marca' | 'playbook' | 'buyer' | 'evaluator';
 type GeneralConfigTab = 'identidad' | 'alcance';
-type AiAgentKind = 'general' | 'sales';
+type AiAgentKind = 'sales';
 
 interface AgentFormState {
   nombre: string; email: string; password: string; confirmPassword: string; rol: string; changePassword: boolean;
@@ -81,13 +81,6 @@ interface SalesAgentUiSettings {
   recommendationDepth: '1' | '2' | '3';
   handoffMode: 'temprano' | 'balanceado' | 'estricto';
   maxResponseLength: 'brief' | 'standard' | 'detailed';
-}
-
-interface GeneralAgentUiSettings {
-  enabled: boolean;
-  handoffMode: 'temprano' | 'balanceado' | 'estricto';
-  maxResponseLength: 'brief' | 'standard' | 'detailed';
-  modelName: string;
 }
 
 interface GeneralAgentProfileState {
@@ -149,35 +142,6 @@ const DEFAULT_PROFILE: SalesAgentProfileState = {
   followUpStyle: '', upsellStyle: '', escalateConditions: [],
   idealBuyers: [], purchaseSignals: [], lowIntentSignals: [], bulkBuyerSignals: [], commonObjections: [],
 };
-
-const DEFAULT_GENERAL_PROFILE: GeneralAgentProfileState = {
-  name: 'General Agent',
-  agentPersona: '',
-  missionStatement: '',
-  scopeNotes: '',
-  allowedTopics: [],
-  blockedTopics: [],
-  handoffToSalesWhen: [],
-  handoffToHumanWhen: [],
-  responseLanguage: 'auto',
-  greetingMessage: '',
-};
-
-function mapGeneralProfile(profile: OnboardingProfileApiItem): GeneralAgentProfileState {
-  const gp = profile.general_agent_profile || {};
-  return {
-    name: profile.general_agent_name || 'General Agent',
-    agentPersona: gp.agent_persona || '',
-    missionStatement: gp.mission_statement || '',
-    scopeNotes: gp.scope_notes || '',
-    allowedTopics: gp.allowed_topics || [],
-    blockedTopics: gp.blocked_topics || [],
-    handoffToSalesWhen: gp.handoff_to_sales_when || [],
-    handoffToHumanWhen: gp.handoff_to_human_when || [],
-    responseLanguage: (gp.response_language as GeneralAgentProfileState['responseLanguage']) || 'auto',
-    greetingMessage: gp.greeting_message || '',
-  };
-}
 
 function mapProfile(profile: OnboardingProfileApiItem): SalesAgentProfileState {
   const sales = profile.sales_agent || {};
@@ -292,6 +256,72 @@ function SectionCard({ children }: { children: React.ReactNode }) {
   return <div className="rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/75 p-4">{children}</div>;
 }
 
+function EvaluatorPanel({ salesMetrics }: { salesMetrics: SalesAgentMetricsApiItem | null }) {
+  const evaluator = salesMetrics?.evaluator;
+  const dimensions = evaluator?.dimensions;
+  const distribution = evaluator?.distribution;
+  const topFlags = evaluator?.top_flags || [];
+
+  return (
+    <SectionCard>
+      <SectionTitle>Quality Evaluator (P2.4)</SectionTitle>
+      <div className="space-y-4">
+        <div className="grid gap-2 sm:grid-cols-3">
+          {[
+            { label: 'Send', value: distribution?.send_pct, count: distribution?.send },
+            { label: 'Rewrite', value: distribution?.rewrite_pct, count: distribution?.rewrite },
+            { label: 'Escalate', value: distribution?.escalate_pct, count: distribution?.escalate },
+          ].map((item) => (
+            <div key={item.label} className="rounded-2xl border border-[rgba(17,17,16,0.08)] bg-[rgba(17,17,16,0.02)] px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-[0.10em] text-ink-400">{item.label}</p>
+              <p className="mt-1 text-[15px] font-semibold text-ink-900">{item.value !== undefined ? `${item.value}%` : '-'}</p>
+              <p className="text-[11px] text-ink-400">{item.count !== undefined ? `${item.count} casos` : 'Sin datos'}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          {[
+            { label: 'Coherencia', value: dimensions?.coherencia },
+            { label: 'Naturalidad', value: dimensions?.naturalidad },
+            { label: 'Brand fit', value: dimensions?.brand_fit },
+            { label: 'CTA quality', value: dimensions?.cta_quality },
+          ].map((item) => (
+            <div key={item.label} className="rounded-2xl border border-[rgba(17,17,16,0.08)] bg-white/80 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[12px] font-semibold text-ink-700">{item.label}</p>
+                <p className="text-[12px] font-bold text-ink-900">{item.value !== undefined ? item.value.toFixed(2) : '-'}</p>
+              </div>
+              <div className="mt-2 h-2 rounded-full bg-[rgba(17,17,16,0.08)]">
+                <div
+                  className="h-2 rounded-full bg-brand-500"
+                  style={{ width: `${Math.max(0, Math.min(100, Math.round((item.value || 0) * 100)))}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-2xl border border-[rgba(17,17,16,0.08)] bg-[rgba(17,17,16,0.02)] p-3">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-500">Top flags</p>
+          {topFlags.length === 0 ? (
+            <p className="mt-2 text-[12px] text-ink-400">Aun no hay flags suficientes para mostrar patrones.</p>
+          ) : (
+            <div className="mt-2 space-y-1.5">
+              {topFlags.map((flag) => (
+                <div key={flag.flag} className="flex items-center justify-between rounded-xl bg-white/80 px-2.5 py-1.5 text-[12px]">
+                  <span className="font-medium text-ink-700">{flag.flag}</span>
+                  <span className="text-ink-500">{flag.count} ({flag.pct}%)</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </SectionCard>
+  );
+}
+
 
 export function SharedBrandContextCard({ whatYouSell, whoYouSellTo }: { whatYouSell: string; whoYouSellTo: string }) {
   return (
@@ -328,6 +358,7 @@ const CONFIG_TABS: { id: ConfigTab; label: string; icon: React.ComponentType<{ s
   { id: 'ejecucion', label: 'Ejecucion', icon: Settings2 },
   { id: 'estrategia', label: 'Estrategia', icon: Sparkles },
   { id: 'guardrails', label: 'Guardrails', icon: Shield },
+  { id: 'evaluator', label: 'Evaluator', icon: Sparkles },
 ];
 
 const GENERAL_CONFIG_TABS: { id: GeneralConfigTab; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
@@ -418,6 +449,7 @@ function GeneralConfigPanel({
 }
 
 void GeneralConfigPanel;
+void UnifiedGeneralConfigPanel;
 
 function UnifiedGeneralConfigPanel({
   profile,
@@ -696,6 +728,15 @@ function ConfigPanel({
           </div>
           </SectionCard>
         )}
+
+        {tab === 'evaluator' && (
+          <SectionCard>
+            <SectionTitle>Quality Evaluator (P2.4)</SectionTitle>
+            <p className="text-[12px] text-ink-500">
+              Esta vista detallada está disponible en la configuración V2 del Sales Agent.
+            </p>
+          </SectionCard>
+        )}
       </div>
     </div>
   );
@@ -941,6 +982,8 @@ function ConfigPanelV2({
           </SectionCard>
         )}
 
+        {tab === 'evaluator' && <EvaluatorPanel salesMetrics={salesMetrics} />}
+
         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <SectionCard>
             <SectionTitle>Metricas recientes</SectionTitle>
@@ -1123,14 +1166,10 @@ export function AgentsPage() {
   const [deactivateId, setDeactivateId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [selectedAiAgent, setSelectedAiAgent] = useState<AiAgentKind>('general');
-  const [generalProfile, setGeneralProfile] = useState<GeneralAgentProfileState>(DEFAULT_GENERAL_PROFILE);
+  const [selectedAiAgent, setSelectedAiAgent] = useState<AiAgentKind>('sales');
   const [profile, setProfile] = useState<SalesAgentProfileState>(DEFAULT_PROFILE);
   const [salesMetrics, setSalesMetrics] = useState<SalesAgentMetricsApiItem | null>(null);
   const [activeTab, setActiveTab] = useState<AgentsTab>('ia');
-  const [generalSettings, setGeneralSettings] = useState<GeneralAgentUiSettings>({
-    enabled: true, handoffMode: 'balanceado', maxResponseLength: 'brief', modelName: 'gpt-4.1-nano',
-  });
   const [settings, setSettings] = useState<SalesAgentUiSettings>({
     enabled: true, autonomyLevel: 'semi_autonomo', followupMode: 'suave',
     maxFollowups: '1', recommendationDepth: '2', handoffMode: 'balanceado',
@@ -1156,15 +1195,7 @@ export function AgentsPage() {
       try {
         const p = await api.getOnboardingProfile();
         if (!mounted) return;
-        setGeneralProfile(mapGeneralProfile(p));
         setProfile(mapProfile(p));
-        const ga = p.general_agent || p.ai_preferences?.general_agent;
-        if (ga) setGeneralSettings({
-          enabled: ga.enabled ?? true,
-          handoffMode: ga.handoff_mode ?? 'balanceado',
-          maxResponseLength: ga.max_response_length ?? 'brief',
-          modelName: ga.model_name ?? 'gpt-4.1-nano',
-        });
         const sa = p.sales_agent || p.ai_preferences?.sales_agent;
         if (sa) setSettings({
           enabled: sa.enabled ?? true,
@@ -1191,28 +1222,12 @@ export function AgentsPage() {
     setProfile((prev) => ({ ...prev, [key]: value }));
   }
 
-  function setGeneralProfileField<K extends keyof GeneralAgentProfileState>(key: K, value: GeneralAgentProfileState[K]) {
-    setGeneralProfile((prev) => ({ ...prev, [key]: value }));
-  }
-
   async function handleSave() {
     setSaving(true);
     try {
       const currentProfile = await api.getOnboardingProfile();
       const payload = {
         settings_version: 2,
-        general_agent_name: generalProfile.name.trim() || 'General Agent',
-        general_agent_profile: {
-          agent_persona: generalProfile.agentPersona.trim(),
-          mission_statement: generalProfile.missionStatement.trim(),
-          scope_notes: generalProfile.scopeNotes.trim(),
-          allowed_topics: generalProfile.allowedTopics,
-          blocked_topics: generalProfile.blockedTopics,
-          handoff_to_sales_when: generalProfile.handoffToSalesWhen,
-          handoff_to_human_when: generalProfile.handoffToHumanWhen,
-          response_language: generalProfile.responseLanguage,
-          greeting_message: generalProfile.greetingMessage.trim(),
-        },
         org_profile: {
           brand: {
             tone_of_voice: profile.toneOfVoice.trim(),
@@ -1261,12 +1276,6 @@ export function AgentsPage() {
         },
         ai_preferences: {
           ...(currentProfile.ai_preferences || {}),
-          general_agent: {
-            enabled: generalSettings.enabled,
-            handoff_mode: generalSettings.handoffMode,
-            max_response_length: generalSettings.maxResponseLength,
-            model_name: generalSettings.modelName.trim() || 'gpt-4.1-nano',
-          },
         },
       } as Partial<OnboardingProfileApiItem> & Record<string, unknown>;
       await api.updateOnboardingProfile(payload);
@@ -1298,7 +1307,7 @@ export function AgentsPage() {
         <PageHeader
           eyebrow="Equipo operativo"
           title="Agentes"
-          description="Configura el General Agent para trial, el Sales Agent para conversion y el equipo humano de asesores."
+          description="Configura el Sales Agent y el equipo humano de asesores."
           meta={
             <div className="flex flex-wrap items-center gap-2">
               {[{ label: 'Asesores', value: total }, { label: 'Activos', value: activos }, { label: 'Admins', value: admins }].map((item) => (
@@ -1342,14 +1351,13 @@ export function AgentsPage() {
               {/* Agent cards row */}
               <div className="grid grid-cols-2 gap-2 border-b border-[rgba(17,17,16,0.07)] p-3 xl:grid-cols-4">
                 {[
-                  { key: 'general', name: generalProfile.name || 'General Agent', role: 'Trial, FAQs y primer filtro', status: generalSettings.enabled ? 'active' : 'paused', tone: 'bg-violet-50 border-violet-100', accent: 'text-violet-700', icon: Bot },
                   { key: 'sales', name: profile.name || 'Sales Agent', role: 'Vendedor conversacional', status: settings.enabled ? 'active' : 'paused', tone: 'bg-emerald-50 border-emerald-100', accent: 'text-emerald-700', icon: ShoppingCart },
                   { name: 'Marketing Agent', role: 'Campañas y reactivación', status: 'soon', tone: 'bg-amber-50 border-amber-100', accent: 'text-amber-700', icon: Megaphone },
                   { key: 'operations', name: 'Operations Agent', role: 'Pedidos y postventa', status: 'soon', tone: 'bg-sky-50 border-sky-100', accent: 'text-sky-700', icon: Settings2 },
                 ].map((card) => {
                   const Icon = card.icon;
                   const agentKey = 'key' in card ? card.key : '';
-                  const isSelectable = agentKey === 'general' || agentKey === 'sales';
+                  const isSelectable = agentKey === 'sales';
                   const isSelected = selectedAiAgent === agentKey;
                   return (
                     <button
@@ -1380,14 +1388,8 @@ export function AgentsPage() {
               <div className="flex min-h-[620px] flex-1 flex-col overflow-hidden">
                 <div className="flex items-center justify-between border-b border-[rgba(17,17,16,0.07)] px-4 py-2.5">
                   <div>
-                    <p className="text-[13px] font-bold text-ink-900">
-                      {selectedAiAgent === 'general' ? 'Configuración del General Agent' : 'Configuración del Sales Agent'}
-                    </p>
-                    <p className="text-[11px] text-ink-400">
-                      {selectedAiAgent === 'general'
-                        ? 'Asistente base, económico y orientado a marca para trial y primer contacto.'
-                        : 'Todo lo que configures aquí se inyecta directamente en el agente en cada conversación.'}
-                    </p>
+                    <p className="text-[13px] font-bold text-ink-900">Configuración del Sales Agent</p>
+                    <p className="text-[11px] text-ink-400">Todo lo que configures aquí se inyecta directamente en el agente en cada conversación.</p>
                   </div>
                   <button onClick={() => void handleSave()} disabled={saving}
                     className="flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60">
@@ -1395,9 +1397,7 @@ export function AgentsPage() {
                     {saving ? 'Guardando…' : 'Guardar'}
                   </button>
                 </div>
-                {selectedAiAgent === 'general'
-                  ? <UnifiedGeneralConfigPanel profile={generalProfile} set={setGeneralProfileField} />
-                  : <ConfigPanelV2 profile={profile} set={setProfileField} settings={settings} setSettings={setSettings} salesMetrics={salesMetrics} />}
+                <ConfigPanelV2 profile={profile} set={setProfileField} settings={settings} setSettings={setSettings} salesMetrics={salesMetrics} />
               </div>
             </div>
 

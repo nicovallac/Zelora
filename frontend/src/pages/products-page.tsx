@@ -7,7 +7,7 @@ import { PageHeader } from '../components/ui/page-header';
 import { CropModal } from '../components/ui/crop-modal';
 import type { OfferType, PriceType, Product, ProductVariant } from '../types';
 import { api } from '../services/api';
-import type { ProductApiItem, ProductPayload, ProductVariantPayload } from '../services/api';
+import type { ProductApiItem, ProductPayload, ProductRelationApiItem, ProductVariantPayload } from '../services/api';
 import { useNotification } from '../contexts/NotificationContext';
 
 /* ─── helpers ─── */
@@ -221,6 +221,41 @@ function formatPromotionLabel(product: Product) {
   return promo.type === 'fixed' ? `-$${promo.value.toLocaleString('es-CO')}` : `-${promo.value}%`;
 }
 
+type OfferValidationResult = {
+  isValid: boolean;
+  title?: string;
+  category?: string;
+  variants?: string;
+  variantName: Record<number, string>;
+  variantSku: Record<number, string>;
+};
+
+function validateOfferDraft(draft: Product): OfferValidationResult {
+  const variantName: Record<number, string> = {};
+  const variantSku: Record<number, string> = {};
+  let title: string | undefined;
+  let category: string | undefined;
+  let variants: string | undefined;
+
+  if (!draft.title.trim()) title = 'El nombre del producto es obligatorio.';
+  if (!draft.category.trim()) category = 'Selecciona o crea una categoría.';
+  if (draft.variants.length === 0) variants = 'Agrega al menos una variante.';
+
+  draft.variants.forEach((variant, idx) => {
+    if (!variant.name.trim()) variantName[idx] = 'Nombre de variante obligatorio.';
+    if (!variant.sku.trim()) variantSku[idx] = 'SKU obligatorio.';
+  });
+
+  const isValid =
+    !title &&
+    !category &&
+    !variants &&
+    Object.keys(variantName).length === 0 &&
+    Object.keys(variantSku).length === 0;
+
+  return { isValid, title, category, variants, variantName, variantSku };
+}
+
 /* ─── Toggle switch ─── */
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -240,21 +275,37 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 interface OfferEditorProps {
   product: Product;
   categories: string[];
+  productTitles: Record<string, string>;
+  relations: ProductRelationApiItem[];
   onClose: () => void;
   onSave: (product: Product) => Promise<void>;
 }
 
-function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps) {
+function OfferEditor({ product, categories, productTitles, relations, onClose, onSave }: OfferEditorProps) {
   const [draft, setDraft] = useState<Product>(product);
   const [tagsInput, setTagsInput] = useState(product.tags.join(', '));
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [cropIndex, setCropIndex] = useState<number | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [attemptedSave, setAttemptedSave] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [pendingSlot, setPendingSlot] = useState<number | null>(null);
 
   const promo = getPromotion(draft);
+  const recommendationMeta = (draft.attributes?.recommendation_score as Record<string, unknown> | undefined) || {};
+  const aestheticFit = Math.max(0, Math.min(1, Number(recommendationMeta.aesthetic_fit ?? 0)));
+  const intentFit = Math.max(0, Math.min(1, Number(recommendationMeta.intent_fit ?? 0)));
+  const commercialFit = Math.max(0, Math.min(1, Number(recommendationMeta.commercial_fit ?? 0)));
+  const popularity = Math.max(0, Math.min(1, Number(recommendationMeta.popularity ?? 0)));
+  const graphBonus = Math.max(0, Math.min(0.2, Number(recommendationMeta.graph_bonus ?? 0)));
+  const baseScore = Math.max(
+    0,
+    Math.min(1, 0.45 * aestheticFit + 0.3 * intentFit + 0.15 * commercialFit + 0.1 * popularity + graphBonus),
+  );
+  const relatedToDraft = relations.filter(
+    (relation) => relation.source_product === draft.id || relation.target_product === draft.id,
+  );
 
   function appendImage(url: string) {
     setDraft((prev) => ({ ...prev, images: [...prev.images, url].slice(0, 5) }));
@@ -368,13 +419,12 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
     if (val) setDraft((prev) => ({ ...prev, category: val }));
   }
 
-  const isValid =
-    draft.title.trim().length > 0 &&
-    draft.category.trim().length > 0 &&
-    draft.variants.length > 0 &&
-    draft.variants.every((v) => v.name.trim().length > 0 && v.sku.trim().length > 0);
+  const validation = useMemo(() => validateOfferDraft(draft), [draft]);
+  const shouldShowErrors = attemptedSave;
 
   async function handleSave() {
+    setAttemptedSave(true);
+    if (!validation.isValid) return;
     setSaving(true);
     try {
       await onSave({
@@ -446,8 +496,11 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
                     value={draft.title}
                     onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))}
                     placeholder="Ej: Camiseta Oversized Negra"
-                    className={INPUT}
+                    className={`${INPUT} ${shouldShowErrors && validation.title ? 'border-red-300 bg-red-50/40 focus:border-red-400' : ''}`}
                   />
+                  {shouldShowErrors && validation.title ? (
+                    <span className="text-[11px] font-medium text-red-600">{validation.title}</span>
+                  ) : null}
                 </label>
 
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -467,7 +520,7 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
                       <select
                         value={draft.category}
                         onChange={(e) => setDraft((prev) => ({ ...prev, category: e.target.value }))}
-                        className={INPUT}
+                        className={`${INPUT} ${shouldShowErrors && validation.category ? 'border-red-300 bg-red-50/40 focus:border-red-400' : ''}`}
                       >
                         <option value="">Selecciona</option>
                         {categories.map((cat) => (
@@ -482,6 +535,9 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
                         + Nueva
                       </button>
                     </div>
+                    {shouldShowErrors && validation.category ? (
+                      <span className="text-[11px] font-medium text-red-600">{validation.category}</span>
+                    ) : null}
                   </label>
                 </div>
 
@@ -643,6 +699,11 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
                   + Agregar
                 </button>
               </div>
+              {shouldShowErrors && validation.variants ? (
+                <p className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-medium text-red-700">
+                  {validation.variants}
+                </p>
+              ) : null}
 
               <div className="space-y-3">
                 {draft.variants.map((variant, idx) => (
@@ -677,8 +738,11 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
                           value={variant.name}
                           onChange={(e) => updateVariant(idx, { name: e.target.value })}
                           placeholder="Ej: Talla M / Negro"
-                          className={INPUT}
+                          className={`${INPUT} ${shouldShowErrors && validation.variantName[idx] ? 'border-red-300 bg-red-50/40 focus:border-red-400' : ''}`}
                         />
+                        {shouldShowErrors && validation.variantName[idx] ? (
+                          <span className="text-[11px] font-medium text-red-600">{validation.variantName[idx]}</span>
+                        ) : null}
                       </label>
                       <label className={LABEL}>
                         SKU interno
@@ -686,8 +750,11 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
                           value={variant.sku}
                           onChange={(e) => updateVariant(idx, { sku: e.target.value })}
                           placeholder="CAM-M-NEG-001"
-                          className={INPUT}
+                          className={`${INPUT} ${shouldShowErrors && validation.variantSku[idx] ? 'border-red-300 bg-red-50/40 focus:border-red-400' : ''}`}
                         />
+                        {shouldShowErrors && validation.variantSku[idx] ? (
+                          <span className="text-[11px] font-medium text-red-600">{validation.variantSku[idx]}</span>
+                        ) : null}
                       </label>
                       <label className={LABEL}>
                         Precio ({getCurrency(draft)})
@@ -838,6 +905,30 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
             <Card className="p-5">
               <p className="mb-4 text-[13px] font-bold text-ink-900">Logística de entrega</p>
 
+              <div className="mb-4 rounded-2xl border border-[rgba(17,17,16,0.08)] bg-white/80 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-ink-400">Recommendation score</p>
+                <p className="mt-1 text-[20px] font-bold text-ink-900">{baseScore.toFixed(2)} / 1.00</p>
+                <div className="mt-2 space-y-1.5 text-[11px] text-ink-600">
+                  <p>Aesthetic: {aestheticFit.toFixed(2)} · Intent: {intentFit.toFixed(2)}</p>
+                  <p>Commercial: {commercialFit.toFixed(2)} · Popularity: {popularity.toFixed(2)} · Graph: +{graphBonus.toFixed(2)}</p>
+                </div>
+                {relatedToDraft.length > 0 ? (
+                  <div className="mt-2 space-y-1">
+                    {relatedToDraft.slice(0, 5).map((relation) => {
+                      const counterpart = relation.source_product === draft.id ? relation.target_product : relation.source_product;
+                      return (
+                        <div key={relation.id} className="flex items-center justify-between rounded-xl bg-[rgba(17,17,16,0.03)] px-2 py-1 text-[11px]">
+                          <span>{relation.relation_type.replaceAll('_', ' ')}: {productTitles[counterpart] || 'Producto relacionado'}</span>
+                          <span className="font-semibold">{relation.weight.toFixed(2)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-[11px] text-ink-500">Sin relaciones de grafo para este producto.</p>
+                )}
+              </div>
+
               <div className="space-y-4">
                 <div className="flex items-center justify-between rounded-xl border border-[rgba(17,17,16,0.09)] bg-white/70 px-4 py-3">
                   <div>
@@ -871,7 +962,14 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
           className="absolute bottom-0 left-0 right-0 z-10 px-5 pb-5 pt-10 pointer-events-none"
           style={{ background: 'linear-gradient(to top, #f5f4ef 65%, transparent)' }}
         >
-          <div className="pointer-events-auto flex items-center justify-end gap-3">
+          <div className="pointer-events-auto flex items-center justify-between gap-3">
+            <div className="min-h-[20px]">
+              {shouldShowErrors && !validation.isValid ? (
+                <p className="text-[11px] font-medium text-red-700">
+                  Revisa los campos marcados para guardar el producto.
+                </p>
+              ) : null}
+            </div>
             <button
               type="button"
               onClick={onClose}
@@ -882,7 +980,7 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
             <button
               type="button"
               onClick={() => void handleSave()}
-              disabled={!isValid || saving || uploadingImage}
+              disabled={saving || uploadingImage}
               className="inline-flex items-center gap-2 rounded-full bg-brand-500 px-5 py-2.5 text-[13px] font-semibold text-white shadow-card transition hover:bg-brand-600 disabled:opacity-50"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : null}
@@ -910,6 +1008,7 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
 export function ProductsPage() {
   const { showError, showSuccess } = useNotification();
   const [products, setProducts] = useState<Product[]>([]);
+  const [productRelations, setProductRelations] = useState<ProductRelationApiItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [offerType, setOfferType] = useState<'all' | OfferType>('all');
@@ -938,14 +1037,24 @@ export function ProductsPage() {
     service: products.filter((p) => p.offerType === 'service').length,
     hybrid: products.filter((p) => p.offerType === 'hybrid').length,
   }), [products]);
+  const productTitles = useMemo(
+    () => Object.fromEntries(products.map((item) => [item.id, item.title])),
+    [products],
+  );
 
   useEffect(() => {
     let cancelled = false;
     async function loadProducts() {
       setLoading(true);
       try {
-        const data = await api.getProducts();
-        if (!cancelled) setProducts(data.map(mapApiProductToUi));
+        const [data, relations] = await Promise.all([
+          api.getProducts(),
+          api.getProductRelations().catch(() => []),
+        ]);
+        if (!cancelled) {
+          setProducts(data.map(mapApiProductToUi));
+          setProductRelations(relations);
+        }
       } catch (error) {
         if (!cancelled) showError('Catálogo', error instanceof Error ? error.message : 'No se pudo cargar el catálogo.');
       } finally {
@@ -1150,6 +1259,8 @@ export function ProductsPage() {
         <OfferEditor
           product={selectedProduct}
           categories={categories.filter((item) => item !== 'all')}
+          productTitles={productTitles}
+          relations={productRelations}
           onClose={() => setSelectedProduct(null)}
           onSave={handleSaveProduct}
         />

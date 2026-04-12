@@ -7,6 +7,7 @@ import {
   Plug,
   GitBranch,
   Package,
+  TrendingUp,
   Users,
   UserCheck,
   Building2,
@@ -23,12 +24,12 @@ import { NotificationBell } from '../ui/NotificationBell';
 
 const ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
   LayoutDashboard, MessageSquare, BookOpen, Plug, GitBranch, Package,
-  Users, UserCheck, Building2,
+  TrendingUp, Users, UserCheck, Building2,
 };
 
 const NAV_SECTIONS = [
   { label: 'Principal', paths: ['/', '/inbox'] },
-  { label: 'Ventas',    paths: ['/products', '/knowledge-base', '/flows', '/integrations'] },
+  { label: 'Ventas',    paths: ['/products', '/knowledge-base', '/flows', '/integrations', '/analytics'] },
 ];
 
 const ALL_NAV = [
@@ -38,6 +39,7 @@ const ALL_NAV = [
   { label: 'Base de conocimiento',path: '/knowledge-base',icon: 'BookOpen',        audience: 'all' },
   { label: 'Flujos',              path: '/flows',         icon: 'GitBranch',       audience: 'all' },
   { label: 'Canales',             path: '/integrations',  icon: 'Plug',            audience: 'all' },
+  { label: 'Analytics',           path: '/analytics',     icon: 'TrendingUp',      audience: 'all' },
   { label: 'Agentes',             path: '/admin/agents',  icon: 'Users',           audience: 'admin' },
   { label: 'Contactos',           path: '/admin/contacts',icon: 'UserCheck',       audience: 'admin' },
   { label: 'Organizacion',        path: '/admin/organizations', icon: 'Building2', audience: 'admin' },

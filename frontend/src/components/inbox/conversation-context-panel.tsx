@@ -24,7 +24,7 @@ function isMeaningfulValue(value?: string | null) {
 
 function activeAgentLabel(agent?: InboxConversationDetail['activeAiAgent']) {
   if (agent === 'sales') return 'Sales Agent';
-  if (agent === 'general') return 'General Agent';
+  if (agent === 'general') return 'Sales Agent';
   if (agent === 'marketing') return 'Marketing Agent';
   if (agent === 'operations') return 'Operations Agent';
   return '';
@@ -108,6 +108,10 @@ export function ConversationContextPanel({
   const qualificationStatus = conversation?.qualification?.['affiliate_status'];
   const qualificationCategory = conversation?.qualification?.['affiliate_category'];
   const aiAgentLabel = activeAgentLabel(conversation?.activeAiAgent);
+  const salesState = (conversation?.metadata?.sales_state as Record<string, unknown> | undefined) || {};
+  const lastEvaluation = (conversation?.metadata?.last_evaluation as Record<string, unknown> | undefined) || {};
+  const closeSignals = Array.isArray(salesState.close_signals) ? (salesState.close_signals as string[]) : [];
+  const evalFlags = Array.isArray(lastEvaluation.flags) ? (lastEvaluation.flags as string[]) : [];
 
   if (!conversation) {
     return (
@@ -183,6 +187,60 @@ export function ConversationContextPanel({
           ) : missingContactData ? (
             <p className="mt-3 text-xs text-amber-700">Faltan datos del cliente. Puedes completarlos aqui y se guardaran en el contacto.</p>
           ) : null}
+        </div>
+      </Card>
+
+      <Card className="p-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-400">AI Decision</p>
+        <div className="mt-2.5 space-y-2 text-[12px]">
+          <div className="rounded-2xl border border-[rgba(17,17,16,0.07)] bg-[rgba(255,255,255,0.55)] p-2.5">
+            <p className="font-semibold text-ink-800">Sales brain</p>
+            <p className="mt-1 text-ink-600">Etapa: {String(salesState.stage || conversation.salesStage || 'discovering').replaceAll('_', ' ')}</p>
+            <p className="text-ink-600">Decision: {String(salesState.decision || 'recommend').replaceAll('_', ' ')}</p>
+            {closeSignals.length > 0 ? (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {closeSignals.slice(0, 4).map((signal) => (
+                  <span key={signal} className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                    {signal.replaceAll('_', ' ')}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="rounded-2xl border border-[rgba(17,17,16,0.07)] bg-[rgba(255,255,255,0.55)] p-2.5">
+            <p className="font-semibold text-ink-800">Evaluator (P2.4)</p>
+            <p className="mt-1 text-ink-600">
+              Score: {typeof lastEvaluation.score === 'number' ? Number(lastEvaluation.score).toFixed(2) : '-'} ·
+              Action: {String(lastEvaluation.action || 'send')}
+            </p>
+            {evalFlags.length > 0 ? (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {evalFlags.slice(0, 5).map((flag) => (
+                  <span key={flag} className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">{flag}</span>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-1 text-[11px] text-ink-400">Sin flags.</p>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-[rgba(17,17,16,0.07)] bg-[rgba(255,255,255,0.55)] p-2.5">
+            <p className="font-semibold text-ink-800">Contact memory (P3.1)</p>
+            {conversation.contactMemory ? (
+              <>
+                <p className="mt-1 text-ink-600">Conversaciones previas: {conversation.contactMemory.conversation_count}</p>
+                <p className="text-ink-600">
+                  Budget: {conversation.contactMemory.inferred_budget_min ?? '-'} - {conversation.contactMemory.inferred_budget_max ?? '-'}
+                </p>
+                <p className="text-ink-600">
+                  Última intención: {conversation.contactMemory.last_intent || 'ninguna'}
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-[11px] text-ink-400">Sin memoria persistida para este contacto.</p>
+            )}
+          </div>
         </div>
       </Card>
 

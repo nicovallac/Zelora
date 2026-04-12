@@ -242,7 +242,7 @@ export function WebAppPage() {
         ]);
         if (cancelled) return;
         setSettings(mapApiConnectionToUi(data));
-        const greeting = profile.sales_agent_profile?.greeting_message || profile.general_agent_profile?.greeting_message || '';
+        const greeting = profile.sales_agent_profile?.greeting_message || '';
         setAgentGreeting(greeting);
       } catch (error) {
         if (cancelled) return;

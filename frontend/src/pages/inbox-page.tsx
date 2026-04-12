@@ -127,6 +127,8 @@ function buildSummary(conversation: ConvListItem): InboxConversationSummary {
 function buildDetail(summary: InboxConversationSummary, detail: ConvDetail | null): InboxConversationDetail {
   return {
     ...summary,
+    metadata: (detail?.metadata as Record<string, unknown> | undefined) || {},
+    contactMemory: detail?.contact_memory || null,
     nextStep: detail?.next_step || summary.nextStep,
     summary: detail?.conversation_summary || summary.summary,
     escalationReason: detail?.escalation_reason || summary.escalationReason,

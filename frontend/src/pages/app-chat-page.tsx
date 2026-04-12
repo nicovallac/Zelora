@@ -1304,7 +1304,7 @@ export function AppChatPage() {
         setIosBundleText(mapped.iosBundleIds.join('\n'));
         setAndroidPackageText(mapped.androidPackageNames.join('\n'));
         setAllowedOriginsText(mapped.allowedOrigins.join('\n'));
-        setAgentGreeting(profile.sales_agent_profile?.greeting_message || profile.general_agent_profile?.greeting_message || '');
+        setAgentGreeting(profile.sales_agent_profile?.greeting_message || '');
       })
       .catch((error) => showError('App Chat', error instanceof Error ? error.message : 'No se pudo cargar App Chat.'));
   }, [showError]);

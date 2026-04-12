@@ -26,6 +26,11 @@ function preview(content: string) {
   return c.length > 120 ? `${c.slice(0, 117)}...` : c;
 }
 
+function toNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function articleToListItem(a: KBArticleApiItem): KnowledgeListItem {
   const looksLikeLink = /^https?:\/\//i.test(strip(a.content));
   return {
@@ -101,12 +106,14 @@ function Stat({ label, value, accent }: { label: string; value: number; accent?:
 
 const KIND_LABELS: Record<string, string> = {
   faq: 'FAQ',
+  conversation_example: 'Ejemplo',
   winning_reply: 'Respuesta',
   objection: 'Objeción',
 };
 
 const KIND_COLORS: Record<string, string> = {
   faq: 'bg-sky-50 text-sky-700 border-sky-200/60',
+  conversation_example: 'bg-purple-50 text-purple-700 border-purple-200/60',
   winning_reply: 'bg-emerald-50 text-emerald-700 border-emerald-200/60',
   objection: 'bg-amber-50 text-amber-700 border-amber-200/60',
 };
@@ -118,6 +125,7 @@ function CandidateRow({
   onToggle,
   onApprove,
   onReject,
+  onShowConflicts,
 }: {
   item: LearningCandidateApiItem;
   selected: boolean;
@@ -125,11 +133,18 @@ function CandidateRow({
   onToggle: () => void;
   onApprove: () => void;
   onReject: () => void;
+  onShowConflicts: () => void;
 }) {
-  const isLlm = (item.metadata as Record<string, unknown>)?.source === 'llm';
-  const tags: string[] = ((item.metadata as Record<string, unknown>)?.tags as string[]) || [];
-  const sourceLabel = String((item.metadata as Record<string, unknown>)?.source_label || '').trim();
-  const resolutionLabel = String((item.metadata as Record<string, unknown>)?.resolution_label || '').trim();
+  const meta = (item.metadata as Record<string, unknown>) || {};
+  const isLlm = meta?.source === 'llm';
+  const tags: string[] = (meta?.tags as string[]) || [];
+  const sourceLabel = String(meta?.source_label || '').trim();
+  const resolutionLabel = String(meta?.resolution_label || '').trim();
+  const stage = String(meta?.stage || '').trim();
+  const channel = String(meta?.channel || '').trim();
+  const commercialOutcome = String(meta?.commercial_outcome || '').trim();
+  const conflicts = Array.isArray(meta?.conflicts) ? (meta.conflicts as Array<Record<string, unknown>>) : [];
+  const conflictCount = conflicts.length;
   const pct = Math.round((item.confidence || 0) * 100);
   const kindColor = KIND_COLORS[item.kind] || 'bg-ink-50 text-ink-600 border-ink-200/60';
 
@@ -171,8 +186,35 @@ function CandidateRow({
             {tags.map((t) => (
               <span key={t} className="rounded-full bg-ink-100/60 px-2 py-0.5 text-[10px] text-ink-500">{t}</span>
             ))}
+            {conflictCount > 0 && (
+              <button
+                onClick={onShowConflicts}
+                className="rounded-full border border-amber-300/70 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 transition hover:bg-amber-100"
+              >
+                Conflictos: {conflictCount}
+              </button>
+            )}
           </div>
           <p className="mt-1.5 text-[13px] font-semibold leading-snug text-ink-900">{item.title}</p>
+          {(stage || channel || commercialOutcome) && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {stage && (
+                <span className="rounded-full bg-[rgba(17,17,16,0.05)] px-2 py-0.5 text-[10px] font-medium text-ink-600">
+                  Etapa: {stage}
+                </span>
+              )}
+              {channel && (
+                <span className="rounded-full bg-[rgba(17,17,16,0.05)] px-2 py-0.5 text-[10px] font-medium text-ink-600">
+                  Canal: {channel}
+                </span>
+              )}
+              {commercialOutcome && (
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                  Outcome: {commercialOutcome}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex flex-shrink-0 items-center gap-1.5">
           <button
@@ -241,6 +283,11 @@ export function KnowledgeBasePage() {
   const [generating, setGenerating] = useState(false);
   const [actingId, setActingId] = useState<string | null>(null);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
+  const [conflictCandidate, setConflictCandidate] = useState<LearningCandidateApiItem | null>(null);
+  const conflictMeta = (conflictCandidate?.metadata as Record<string, unknown> | undefined) || {};
+  const conflictList = Array.isArray(conflictMeta.conflicts)
+    ? (conflictMeta.conflicts as Array<Record<string, unknown>>)
+    : [];
 
   // ── data loading ────────────────────────────────────────────────────────────
 
@@ -677,6 +724,7 @@ export function KnowledgeBasePage() {
                         onToggle={() => toggleCandidate(c.id)}
                         onApprove={() => void handleApprove(c.id)}
                         onReject={() => void handleReject(c.id)}
+                        onShowConflicts={() => setConflictCandidate(c)}
                       />
                     ))}
                   </div>
@@ -685,6 +733,72 @@ export function KnowledgeBasePage() {
             </div>
           )}
         </div>
+
+        {conflictCandidate && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4 backdrop-blur-sm">
+            <div className="w-full max-w-xl rounded-3xl border border-[rgba(17,17,16,0.10)] bg-white p-6 shadow-xl">
+              <p className="text-[15px] font-bold text-ink-900">Conflictos detectados</p>
+              <p className="mt-1.5 text-[13px] text-ink-500">
+                {conflictCandidate.title}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                {String(conflictMeta.stage || '').trim() && (
+                  <span className="rounded-full bg-[rgba(17,17,16,0.05)] px-2.5 py-1 font-medium text-ink-600">
+                    Etapa: {String(conflictMeta.stage)}
+                  </span>
+                )}
+                {String(conflictMeta.channel || '').trim() && (
+                  <span className="rounded-full bg-[rgba(17,17,16,0.05)] px-2.5 py-1 font-medium text-ink-600">
+                    Canal: {String(conflictMeta.channel)}
+                  </span>
+                )}
+                {String(conflictMeta.commercial_outcome || '').trim() && (
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
+                    Outcome: {String(conflictMeta.commercial_outcome)}
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-4 max-h-[280px] space-y-2 overflow-y-auto pr-1">
+                {conflictList.length === 0 ? (
+                  <div className="rounded-xl bg-[rgba(17,17,16,0.04)] px-3 py-2 text-[12px] text-ink-500">
+                    No hay detalle de conflictos en metadata para este candidato.
+                  </div>
+                ) : (
+                  conflictList.map((conflict: Record<string, unknown>, idx: number) => (
+                    <div key={`${String(conflict.article_id || idx)}`} className="rounded-xl border border-amber-200/60 bg-amber-50/40 px-3 py-2">
+                      <p className="text-[12px] font-semibold text-ink-800">{String(conflict.article_title || 'Articulo existente')}</p>
+                      <p className="mt-1 text-[11px] text-amber-700">
+                        Similitud: {toNumber(conflict.similarity, 0).toFixed(2)}
+                      </p>
+                      {String(conflict.content_snippet || '').trim() && (
+                        <p className="mt-1 text-[11px] text-ink-500">{String(conflict.content_snippet)}</p>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="mt-5 flex gap-2">
+                <button
+                  onClick={() => {
+                    void handleApprove(conflictCandidate.id);
+                    setConflictCandidate(null);
+                  }}
+                  className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-[13px] font-semibold text-white transition hover:bg-emerald-600"
+                >
+                  Aprobar como nuevo
+                </button>
+                <button
+                  onClick={() => setConflictCandidate(null)}
+                  className="rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white px-4 py-2.5 text-[13px] font-semibold text-ink-700 transition hover:bg-[rgba(17,17,16,0.04)]"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <AddKnowledgeModal
           open={modalOpen}

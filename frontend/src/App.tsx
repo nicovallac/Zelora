@@ -4,6 +4,7 @@ import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import MainLayout from './components/layout/main-layout';
 
 const DashboardPage = lazy(() => import('./pages/dashboard-page'));
+const AnalyticsPage = lazy(() => import('./pages/analytics-page').then(m => ({ default: m.AnalyticsPage })));
 const WebAppPage = lazy(() => import('./pages/webapp-page').then(m => ({ default: m.WebAppPage })));
 const WebWidgetDemoPage = lazy(() => import('./pages/web-widget-demo-page').then(m => ({ default: m.WebWidgetDemoPage })));
 const AppChatPage = lazy(() => import('./pages/app-chat-page').then(m => ({ default: m.AppChatPage })));
@@ -15,6 +16,7 @@ const KnowledgeBasePage = lazy(() => import('./pages/knowledge-base-page').then(
 const FlowBuilderPage = lazy(() => import('./pages/flow-builder-page').then(m => ({ default: m.FlowBuilderPage })));
 const IntegrationsPage = lazy(() => import('./pages/integrations-page').then(m => ({ default: m.IntegrationsPage })));
 const ProductsPage = lazy(() => import('./pages/products-page').then(m => ({ default: m.ProductsPage })));
+const WorkspacePerformancePage = lazy(() => import('./pages/workspace-performance-page').then(m => ({ default: m.WorkspacePerformancePage })));
 const NotFoundPage = lazy(() => import('./pages/not-found-page').then(m => ({ default: m.NotFoundPage })));
 const ProfilePage = lazy(() => import('./pages/profile-page').then(m => ({ default: m.ProfilePage })));
 const LoginPage = lazy(() => import('./pages/login-page').then(m => ({ default: m.LoginPage })));
@@ -59,7 +61,7 @@ export default function App() {
           <Route path="/webapp" element={<Navigate to="/web-widget" replace />} />
           <Route path="/app-chat" element={<AppChatPage />} />
           <Route path="/inbox" element={<InboxPage />} />
-<Route path="/analytics" element={<Navigate to="/" replace />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
           <Route path="/knowledge-base/historical" element={<Navigate to="/knowledge-base" replace />} />
           <Route path="/knowledge-base/learning" element={<Navigate to="/knowledge-base" replace />} />
@@ -80,7 +82,7 @@ export default function App() {
           <Route path="/workspace/activity" element={<Navigate to="/inbox" replace />} />
           <Route path="/workspace/decisions" element={<Navigate to="/" replace />} />
           <Route path="/workspace/collab" element={<Navigate to="/inbox" replace />} />
-          <Route path="/workspace/performance" element={<Navigate to="/" replace />} />
+          <Route path="/workspace/performance" element={<WorkspacePerformancePage />} />
           <Route path="/workspace/actions" element={<Navigate to="/inbox" replace />} />
           <Route path="/integrations" element={<IntegrationsPage />} />
           <Route path="/not-found" element={<NotFoundPage />} />

@@ -9,6 +9,7 @@ import { KnowledgeHistoricalPanel } from './knowledge-historical-panel';
 
 const KIND_LABELS: Record<LearningCandidateApiItem['kind'], string> = {
   faq: 'FAQ',
+  conversation_example: 'Ejemplo',
   winning_reply: 'Respuesta',
   objection: 'Objecion',
   estilo_comunicacion: 'Estilo',
@@ -16,6 +17,7 @@ const KIND_LABELS: Record<LearningCandidateApiItem['kind'], string> = {
 
 const KIND_COLORS: Record<LearningCandidateApiItem['kind'], string> = {
   faq: 'bg-[rgba(17,17,16,0.06)] text-ink-700',
+  conversation_example: 'bg-purple-100 text-purple-700',
   winning_reply: 'bg-emerald-100 text-emerald-700',
   objection: 'bg-amber-100 text-amber-700',
   estilo_comunicacion: 'bg-purple-100 text-purple-700',

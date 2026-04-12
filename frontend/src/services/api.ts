@@ -166,6 +166,19 @@ export interface ConvListItem {
 
 export interface ConvDetail extends ConvListItem {
   contact?: string | null;
+  metadata?: Record<string, unknown>;
+  contact_memory?: {
+    conversation_count: number;
+    inferred_budget_min: number | null;
+    inferred_budget_max: number | null;
+    style_cues: Record<string, unknown>;
+    occasion_hints: string[];
+    category_preferences: string[];
+    last_products_shown: string[];
+    last_intent: string;
+    last_objection: string;
+    converted: boolean;
+  } | null;
   messages: MessageItem[];
   timeline: {
     id: string;
@@ -194,14 +207,57 @@ export interface MetricsOverview {
 export interface ChannelMetric {
   canal: string;
   total: number;
-  automatizadas: number;
-  escaladas: number;
+  automatizadas?: number;
+  escaladas?: number;
+  resolved_sum?: number;
+  escalated_sum?: number;
+  ai_handled_sum?: number;
+  avg_csat?: number;
+  avg_response_time?: number;
 }
 
 export interface IntentMetric {
   nombre: string;
   count: number;
   porcentaje: number;
+}
+
+export interface LearningLoopMetricsApiItem {
+  period_days: number;
+  candidates: {
+    total: number;
+    by_status: Array<{ status: string; count: number }>;
+    by_kind: Array<{ kind: string; count: number }>;
+    pending: number;
+    approved: number;
+    rejected: number;
+    approval_rate: number;
+  };
+  impact: {
+    cvr_before_learning: number;
+    cvr_after_learning: number;
+    cvr_improvement: number;
+  };
+}
+
+export interface MetricsSnapshotApiItem {
+  id: string;
+  date: string;
+  canal: string;
+  total_conversations: number;
+  resolved: number;
+  escalated: number;
+  avg_response_time_s: number;
+  csat_score: number;
+  ai_handled: number;
+  resolution_rate: number;
+  escalation_rate: number;
+  ai_rate: number;
+}
+
+export interface HourlyMetricApiItem {
+  hour: string;
+  count: number;
 }
 
 export interface PricingItem {
@@ -374,6 +430,17 @@ export interface ProductApiItem {
   brand: string;
   category: string;
   description: string;
+  subcategory?: string;
+  occasion?: string[];
+  style?: string;
+  color?: string;
+  material?: string;
+  fit?: string;
+  formality?: string;
+  target_audience?: string;
+  is_bestseller?: boolean;
+  popularity_score?: number;
+  embedding_vector?: number[];
   offer_type: 'physical' | 'service' | 'hybrid';
   price_type: 'fixed' | 'variable' | 'quote_required';
   service_mode?: 'onsite' | 'remote' | 'hybrid' | 'not_applicable';
@@ -1058,25 +1125,6 @@ export interface OrgProfileConfig {
   brand?: BrandProfileConfig;
 }
 
-export interface GeneralAgentConfig {
-  enabled?: boolean;
-  name?: string;
-  persona?: string;
-  greeting_message?: string;
-  mission_statement?: string;
-  scope_notes?: string;
-  allowed_topics?: string[];
-  blocked_topics?: string[];
-  handoff_to_sales_when?: string[];
-  handoff_to_human_when?: string[];
-  out_of_scope_action?: 'reply' | 'ignore' | 'escalate';
-  response_language?: 'auto' | 'es' | 'en';
-  max_response_length?: 'brief' | 'standard' | 'detailed';
-  handoff_mode?: 'temprano' | 'balanceado' | 'estricto';
-  model_name?: string;
-  max_kb_snippets?: number;
-}
-
 export interface SalesAgentConfig {
   enabled?: boolean;
   name?: string;
@@ -1140,7 +1188,6 @@ export interface OnboardingProfileApiItem {
   };
   // ── V2 canonical blocks (preferred) ──────────────────────────────────────
   org_profile?: OrgProfileConfig;
-  general_agent?: GeneralAgentConfig;
   sales_agent?: SalesAgentConfig;
   ai_platform?: AiPlatformConfig;
   // ── V1 legacy fields (still accepted by backend normalizer) ──────────────
@@ -1150,20 +1197,6 @@ export interface OnboardingProfileApiItem {
   who_you_sell_to?: string;
   /** @deprecated use org_profile.payment_methods */
   payment_methods?: string[];
-  /** @deprecated use general_agent block */
-  general_agent_name?: string;
-  /** @deprecated use general_agent block */
-  general_agent_profile?: {
-    agent_persona?: string;
-    mission_statement?: string;
-    scope_notes?: string;
-    allowed_topics?: string[];
-    blocked_topics?: string[];
-    handoff_to_sales_when?: string[];
-    handoff_to_human_when?: string[];
-    response_language?: 'auto' | 'es' | 'en';
-    greeting_message?: string;
-  };
   /** @deprecated use sales_agent block */
   sales_agent_name?: string;
   /** @deprecated use sales_agent block */
@@ -1191,7 +1224,7 @@ export interface OnboardingProfileApiItem {
   buyer_model?: BuyerModelConfig;
   /** @deprecated use sales_agent.commerce_rules */
   commerce_rules?: CommerceRulesConfig & { payment_methods?: string[]; shipping_policy?: string };
-  /** @deprecated use ai_platform + general_agent/sales_agent blocks */
+  /** @deprecated use ai_platform + sales_agent block */
   ai_preferences?: {
     provider?: string;
     copilot_model?: string;
@@ -1203,13 +1236,6 @@ export interface OnboardingProfileApiItem {
     sentiment_analysis?: boolean;
     auto_summary?: boolean;
     qa_scoring?: boolean;
-    general_agent?: {
-      enabled?: boolean;
-      trial_mode?: boolean;
-      model_name?: string;
-      handoff_mode?: 'temprano' | 'balanceado' | 'estricto';
-      max_response_length?: 'brief' | 'standard' | 'detailed';
-    };
     sales_agent?: {
       enabled?: boolean;
       model_name?: string;
@@ -1291,6 +1317,34 @@ export interface SalesAgentMetricsApiItem {
   handoffs: number;
   product_recommendations: number;
   avg_confidence_pct: number;
+  evaluator?: {
+    evaluated_count: number;
+    distribution: {
+      send: number;
+      rewrite: number;
+      escalate: number;
+      send_pct: number;
+      rewrite_pct: number;
+      escalate_pct: number;
+    };
+    dimensions: {
+      coherencia: number;
+      naturalidad: number;
+      brand_fit: number;
+      cta_quality: number;
+    };
+    top_flags: Array<{ flag: string; count: number; pct: number }>;
+  };
+}
+
+export interface ProductRelationApiItem {
+  id: string;
+  organization: string;
+  source_product: string;
+  target_product: string;
+  relation_type: 'combina_con' | 'evita_con' | 'bundle_con' | 'alternativa_barata' | 'alternativa_premium' | 'similar_a';
+  weight: number;
+  created_at: string;
 }
 
 export interface HistoricalImportReportApiItem {
@@ -1321,7 +1375,7 @@ export interface HistoricalImportRunResult {
 
 export interface LearningCandidateApiItem {
   id: string;
-  kind: 'faq' | 'winning_reply' | 'objection' | 'estilo_comunicacion';
+  kind: 'faq' | 'conversation_example' | 'winning_reply' | 'objection' | 'estilo_comunicacion';
   status: 'pending' | 'approved' | 'rejected';
   title: string;
   source_question: string;
@@ -1473,6 +1527,9 @@ export const api = {
   getMetricsOverview: (days = 30) => fetchApi<MetricsOverview & Record<string, unknown>>(`/api/analytics/overview/?days=${days}`),
   getMetricsChannels: (days = 30) => fetchApi<{ channels: ChannelMetric[]; period_days: number }>(`/api/analytics/channels/?days=${days}`),
   getMetricsIntents: (days = 30) => fetchApi<IntentMetric[]>(`/api/analytics/intents/?days=${days}`),
+  getLearningLoopMetrics: (days = 30) => fetchApi<LearningLoopMetricsApiItem>(`/api/analytics/learning-loop/?days=${days}`),
+  getMetricsHourly: (days = 7) => fetchApi<{ data: HourlyMetricApiItem[]; period_days: number }>(`/api/analytics/hourly/?days=${days}`),
+  getMetricsSnapshots: () => fetchList<MetricsSnapshotApiItem>('/api/analytics/snapshots/'),
 
   // Pricing
   getPricing: () => fetchApi<PricingItem[]>('/pricing'),
@@ -1587,6 +1644,11 @@ export const api = {
   // Ecommerce
   getProducts: () =>
     fetchList<ProductApiItem>('/api/ecommerce/products/'),
+  getProductRelations: (params?: { source_product?: string; target_product?: string; relation_type?: string }) => {
+    const filtered = params ? Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '')) : {};
+    const q = Object.keys(filtered).length ? `?${new URLSearchParams(filtered as Record<string, string>).toString()}` : '';
+    return fetchList<ProductRelationApiItem>(`/api/ecommerce/product-relations/${q}`);
+  },
   getPublicProducts: (orgSlug: string) =>
     fetchCached(`public-products:${orgSlug}`, () =>
       fetchList<PublicProductApiItem>(`/api/ecommerce/products/public/${encodeURIComponent(orgSlug)}/`),
