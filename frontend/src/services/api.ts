@@ -1212,9 +1212,10 @@ export interface OnboardingProfileApiItem {
     };
     sales_agent?: {
       enabled?: boolean;
-      autonomy_level?: 'asistido' | 'semi_autonomo' | 'autonomo';
+      model_name?: string;
+      autonomy_level?: 'asistido' | 'semi_autonomo' | 'autonomo' | 'full';
       followup_mode?: 'apagado' | 'suave' | 'activo';
-      max_followups?: 0 | 1 | 2;
+      max_followups?: 0 | 1 | 2 | 3;
       recommendation_depth?: 1 | 2 | 3;
       handoff_mode?: 'temprano' | 'balanceado' | 'estricto';
       max_response_length?: 'brief' | 'standard' | 'detailed';

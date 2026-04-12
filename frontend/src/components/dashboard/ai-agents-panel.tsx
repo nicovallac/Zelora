@@ -1,4 +1,4 @@
-import { ShoppingCart, Megaphone, Settings2, Zap, Clock, TrendingUp, Lock } from 'lucide-react';
+import { ShoppingCart, Megaphone, MessageSquare, Settings2, Zap, Clock, TrendingUp, Lock } from 'lucide-react';
 
 interface AgentStat {
   label: string;
@@ -97,6 +97,8 @@ interface AIAgentsPanelProps {
   opportunitiesDetected: number;
   avgResponseTime: string;
   conversationsResolved: number;
+  generalConversations: number;
+  generalEscalated: number;
 }
 
 export function AIAgentsPanel({
@@ -104,8 +106,26 @@ export function AIAgentsPanel({
   opportunitiesDetected,
   avgResponseTime,
   conversationsResolved,
+  generalConversations,
+  generalEscalated,
 }: AIAgentsPanelProps) {
   const agents: AIAgentCardProps[] = [
+    {
+      icon: MessageSquare,
+      color: 'text-emerald-600',
+      bgColor: '#d1fae5',
+      name: 'General Agent',
+      role: 'Agente de soporte general',
+      description: 'Responde consultas frecuentes, orienta al usuario y lo deriva al agente correcto según su intención.',
+      status: 'active',
+      badge: 'Live',
+      stats: [
+        { label: 'Conversaciones', value: generalConversations > 0 ? String(generalConversations) : '—' },
+        { label: 'Escaladas', value: generalEscalated > 0 ? String(generalEscalated) : '—' },
+        { label: 'Resueltas', value: conversationsResolved > 0 ? String(conversationsResolved) : '—' },
+        { label: 'T. respuesta', value: avgResponseTime },
+      ],
+    },
     {
       icon: ShoppingCart,
       color: 'text-brand-600',
@@ -169,7 +189,7 @@ export function AIAgentsPanel({
             <p className="text-[13px] font-bold text-ink-900" style={{ letterSpacing: '-0.01em' }}>
               Tus agentes de IA
             </p>
-            <p className="text-[11px] text-ink-400">1 activo · 2 en desarrollo</p>
+            <p className="text-[11px] text-ink-400">2 activos · 2 en desarrollo</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5 rounded-full bg-brand-50/80 px-3 py-1">
@@ -189,7 +209,7 @@ export function AIAgentsPanel({
       <div className="mt-4 flex items-center gap-1.5 border-t border-[rgba(17,17,16,0.05)] pt-3">
         <TrendingUp size={11} className="text-ink-400" />
         <p className="text-[11px] text-ink-400">
-          Los agentes trabajan en paralelo con tu equipo humano. El Sales Agent ya esta activo en tu inbox.
+          General Agent y Sales Agent trabajan en paralelo con tu equipo humano, activos en tu inbox.
         </p>
       </div>
     </div>

@@ -1,22 +1,45 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
-import { CalendarClock, ImagePlus, Package, Pencil, Plus, Search, Trash2, Wrench } from 'lucide-react';
+import { CalendarClock, Copy, ImagePlus, Loader2, Package, Pencil, Plus, Search, Trash2, Wrench } from 'lucide-react';
 import { getProductAvailableUnits } from '../data/ecommerce';
 import { Button, Card, Tag } from '../components/ui/primitives';
 import { PageHeader } from '../components/ui/page-header';
 import { CropModal } from '../components/ui/crop-modal';
-import type { OfferType, PriceType, Product, ProductVariant, ServiceMode } from '../types';
+import type { OfferType, PriceType, Product, ProductVariant } from '../types';
 import { api } from '../services/api';
 import type { ProductApiItem, ProductPayload, ProductVariantPayload } from '../services/api';
 import { useNotification } from '../contexts/NotificationContext';
 
-function formatCop(value: number) {
+/* ─── helpers ─── */
+
+const CURRENCIES = [
+  { code: 'COP', label: 'COP — Peso colombiano' },
+  { code: 'USD', label: 'USD — Dólar estadounidense' },
+  { code: 'EUR', label: 'EUR — Euro' },
+  { code: 'MXN', label: 'MXN — Peso mexicano' },
+  { code: 'BRL', label: 'BRL — Real brasileño' },
+  { code: 'ARS', label: 'ARS — Peso argentino' },
+  { code: 'CLP', label: 'CLP — Peso chileno' },
+  { code: 'PEN', label: 'PEN — Sol peruano' },
+  { code: 'VES', label: 'VES — Bolívar venezolano' },
+  { code: 'GBP', label: 'GBP — Libra esterlina' },
+];
+
+function getCurrency(product: Product): string {
+  return (product.attributes?.currency as string) || 'COP';
+}
+
+function formatPrice(value: number, currency = 'COP') {
   if (value <= 0) return 'A cotizar';
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    maximumFractionDigits: 0,
-  }).format(value);
+  try {
+    return new Intl.NumberFormat('es-CO', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: ['COP', 'CLP', 'ARS'].includes(currency) ? 0 : 2,
+    }).format(value);
+  } catch {
+    return `${value.toLocaleString('es-CO')} ${currency}`;
+  }
 }
 
 function getOfferTypeBadge(type: OfferType) {
@@ -37,43 +60,7 @@ function getPriceTypeLabel(type: PriceType) {
   return 'Cotización';
 }
 
-function getOfferTypeDescription(type: OfferType) {
-  if (type === 'physical') return 'Lo gestionas con stock, reservados y despacho.';
-  if (type === 'service') return 'Lo gestionas con agenda, duración y capacidad.';
-  return 'Necesita stock físico y también agenda o implementación.';
-}
-
-function getEditorChecklist(type: OfferType) {
-  if (type === 'physical') return ['Nombre y categoría', 'Precio por variante', 'Stock y reservados', 'Despacho o entrega'];
-  if (type === 'service') return ['Nombre y categoría', 'Duración y capacidad', 'Modalidad del servicio', 'Reserva y prestación'];
-  return ['Nombre y categoría', 'Precio y stock base', 'Duración y capacidad', 'Entrega e implementación'];
-}
-
-function getVariantBlockTitle(type: OfferType) {
-  if (type === 'physical') return 'Variantes de producto';
-  if (type === 'service') return 'Planes de servicio';
-  return 'Paquetes híbridos';
-}
-
-function getVariantBlockDescription(type: OfferType) {
-  if (type === 'physical') return 'Cada variante representa una presentación física con su propio SKU, precio y stock.';
-  if (type === 'service') return 'Cada plan representa una modalidad o duración del servicio con su propia capacidad.';
-  return 'Cada paquete combina inventario físico con alcance de servicio o implementación.';
-}
-
-function getVariantNameLabel(type: OfferType) {
-  if (type === 'physical') return 'Nombre de la variante';
-  if (type === 'service') return 'Nombre del plan';
-  return 'Nombre del paquete';
-}
-
-function getVariantNamePlaceholder(type: OfferType) {
-  if (type === 'physical') return 'Talla M / Negro';
-  if (type === 'service') return 'Remoto 45 min';
-  return 'Kit estándar + setup';
-}
-
-function newVariant(type: OfferType): ProductVariant {
+function newVariant(): ProductVariant {
   return {
     id: `v-${Date.now()}-${Math.floor(Math.random() * 999)}`,
     sku: '',
@@ -82,9 +69,9 @@ function newVariant(type: OfferType): ProductVariant {
     cost: 0,
     stock: 0,
     reserved: 0,
-    durationMinutes: type === 'physical' ? 0 : 30,
-    capacity: type === 'physical' ? 0 : 1,
-    deliveryMode: type === 'physical' ? 'not_applicable' : 'remote',
+    durationMinutes: 0,
+    capacity: 0,
+    deliveryMode: 'not_applicable',
   };
 }
 
@@ -107,24 +94,17 @@ function newOffer(): Product {
     images: [],
     tags: [],
     updatedAt: new Date().toISOString(),
-    variants: [newVariant('physical')],
+    variants: [newVariant()],
   };
 }
 
 const DEFAULT_CATEGORIES = [
-  'Ropa',
-  'Calzado',
-  'Accesorios',
-  'Belleza',
-  'Cuidado personal',
-  'Hogar',
-  'Tecnologia',
-  'Mascotas',
-  'Salud y bienestar',
-  'Alimentos y bebidas',
-  'Servicios',
-  'Suscripciones',
+  'Ropa', 'Calzado', 'Accesorios', 'Belleza', 'Cuidado personal',
+  'Hogar', 'Tecnologia', 'Mascotas', 'Salud y bienestar',
+  'Alimentos y bebidas', 'Servicios', 'Suscripciones',
 ];
+
+const QUICK_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'Única'];
 
 function copyOffer(product: Product): Product {
   const idSuffix = `${Date.now()}`.slice(-5);
@@ -219,12 +199,7 @@ function mapUiProductToPayload(product: Product): ProductPayload {
   };
 }
 
-function getPromotion(product: Product): {
-  title?: string;
-  type?: 'percentage' | 'fixed';
-  value?: number;
-  active?: boolean;
-} {
+function getPromotion(product: Product) {
   return (product.attributes?.promotion as {
     title?: string;
     type?: 'percentage' | 'fixed';
@@ -234,33 +209,39 @@ function getPromotion(product: Product): {
 }
 
 function setPromotion(product: Product, patch: Record<string, unknown>): Product {
-  const currentPromotion = getPromotion(product);
   return {
     ...product,
-    attributes: {
-      ...(product.attributes ?? {}),
-      promotion: {
-        ...currentPromotion,
-        ...patch,
-      },
-    },
+    attributes: { ...(product.attributes ?? {}), promotion: { ...getPromotion(product), ...patch } },
   };
 }
 
 function formatPromotionLabel(product: Product) {
-  const promotion = getPromotion(product);
-  if (!promotion.active || !promotion.value) return '';
-  if (promotion.type === 'fixed') {
-    return `-$${promotion.value.toLocaleString('es-CO')}`;
-  }
-  return `-${promotion.value}%`;
+  const promo = getPromotion(product);
+  if (!promo.active || !promo.value) return '';
+  return promo.type === 'fixed' ? `-$${promo.value.toLocaleString('es-CO')}` : `-${promo.value}%`;
 }
 
+/* ─── Toggle switch ─── */
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${checked ? 'bg-brand-500' : 'bg-[rgba(17,17,16,0.15)]'}`}
+    >
+      <span className={`pointer-events-none inline-block h-4 w-4 translate-y-0 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
+    </button>
+  );
+}
+
+/* ─── OfferEditor ─── */
 interface OfferEditorProps {
   product: Product;
   categories: string[];
   onClose: () => void;
-  onSave: (product: Product) => void;
+  onSave: (product: Product) => Promise<void>;
 }
 
 function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps) {
@@ -269,60 +250,51 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [cropIndex, setCropIndex] = useState<number | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const checklist = getEditorChecklist(draft.offerType);
+  const [saving, setSaving] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [pendingSlot, setPendingSlot] = useState<number | null>(null);
 
-  function appendImage(imageUrl: string) {
-    setDraft((prev) => {
-      if (prev.images.length >= 5) return prev;
-      return { ...prev, images: [...prev.images, imageUrl].slice(0, 5) };
-    });
+  const promo = getPromotion(draft);
+
+  function appendImage(url: string) {
+    setDraft((prev) => ({ ...prev, images: [...prev.images, url].slice(0, 5) }));
   }
 
-  function updateImage(index: number, imageUrl: string) {
+  function updateImage(index: number, url: string) {
     setDraft((prev) => ({
       ...prev,
-      images: prev.images.map((item, currentIndex) => (currentIndex === index ? imageUrl : item)),
+      images: prev.images.map((item, i) => (i === index ? url : item)),
     }));
   }
 
-  function handleImageUpload(e: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-    const file = files[0];
-    if (!file) return;
-    const nextIndex = draft.images.length;
+  function handleSlotClick(index: number) {
+    if (draft.images[index]) return; // filled slot — actions are shown separately
+    setPendingSlot(index);
+    imageInputRef.current?.click();
+  }
+
+  function handleFileInputChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || pendingSlot === null) return;
     const reader = new FileReader();
     reader.onload = () => {
       setCropSrc(reader.result as string);
-      setCropIndex(nextIndex);
+      setCropIndex(pendingSlot);
+      setPendingSlot(null);
     };
     reader.readAsDataURL(file);
     e.target.value = '';
   }
 
-  function handleImageUrlAdd() {
-    const nextUrl = window.prompt('URL de la imagen:', '');
-    if (!nextUrl) return;
-    const normalized = nextUrl.trim();
-    if (!normalized) return;
-    appendImage(normalized);
-  }
-
   function removeImage(index: number) {
-    setDraft((prev) => ({
-      ...prev,
-      images: prev.images.filter((_, currentIndex) => currentIndex !== index),
-    }));
+    setDraft((prev) => ({ ...prev, images: prev.images.filter((_, i) => i !== index) }));
   }
 
   function makeImagePrimary(index: number) {
     setDraft((prev) => {
       const target = prev.images[index];
       if (!target) return prev;
-      return {
-        ...prev,
-        images: [target, ...prev.images.filter((_, currentIndex) => currentIndex !== index)],
-      };
+      return { ...prev, images: [target, ...prev.images.filter((_, i) => i !== index)] };
     });
   }
 
@@ -338,11 +310,8 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
     setUploadingImage(true);
     try {
       const uploaded = await api.uploadProductImage(croppedFile);
-      if (cropIndex >= draft.images.length) {
-        appendImage(uploaded.url);
-      } else {
-        updateImage(cropIndex, uploaded.url);
-      }
+      if (cropIndex >= draft.images.length) appendImage(uploaded.url);
+      else updateImage(cropIndex, uploaded.url);
       setCropSrc(null);
       setCropIndex(null);
     } catch (error) {
@@ -357,508 +326,572 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
     setCropIndex(null);
   }
 
-  function setOfferType(nextType: OfferType) {
-    setDraft((prev) => ({
-      ...prev,
-      offerType: nextType,
-      serviceMode: nextType === 'physical' ? 'not_applicable' : prev.serviceMode === 'not_applicable' ? 'remote' : prev.serviceMode,
-      requiresBooking: nextType !== 'physical',
-      requiresShipping: nextType !== 'service',
-      serviceDurationMinutes: nextType === 'physical' ? 0 : Math.max(prev.serviceDurationMinutes, 30),
-      capacity: nextType === 'physical' ? 0 : Math.max(prev.capacity, 1),
-      variants: prev.variants.map((variant) => ({
-        ...variant,
-        stock: nextType === 'service' ? 0 : variant.stock,
-        reserved: nextType === 'service' ? 0 : variant.reserved,
-        durationMinutes: nextType === 'physical' ? 0 : Math.max(variant.durationMinutes, 30),
-        capacity: nextType === 'physical' ? 0 : Math.max(variant.capacity, 1),
-        deliveryMode: nextType === 'physical' ? 'not_applicable' : variant.deliveryMode === 'not_applicable' ? 'remote' : variant.deliveryMode,
-      })),
-    }));
-  }
-
   function updateVariant(idx: number, patch: Partial<ProductVariant>) {
     setDraft((prev) => ({
       ...prev,
-      variants: prev.variants.map((variant, index) => (index === idx ? { ...variant, ...patch } : variant)),
+      variants: prev.variants.map((v, i) => (i === idx ? { ...v, ...patch } : v)),
     }));
   }
 
   function removeVariant(idx: number) {
+    setDraft((prev) => ({ ...prev, variants: prev.variants.filter((_, i) => i !== idx) }));
+  }
+
+  function copyVariant(idx: number) {
+    const original = draft.variants[idx];
+    if (!original) return;
+    const cloned: ProductVariant = {
+      ...original,
+      id: `v-${Date.now()}-${Math.floor(Math.random() * 999)}`,
+      sku: original.sku ? `${original.sku}-2` : '',
+    };
     setDraft((prev) => ({
       ...prev,
-      variants: prev.variants.filter((_, index) => index !== idx),
+      variants: [...prev.variants.slice(0, idx + 1), cloned, ...prev.variants.slice(idx + 1)],
     }));
+  }
+
+  function addQuickVariant(size: string) {
+    const slug = (draft.title || 'PRD').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+    const v: ProductVariant = {
+      ...newVariant(),
+      name: size,
+      sku: `${slug}-${size.replace(/\s+/g, '')}-${Date.now().toString().slice(-3)}`,
+    };
+    setDraft((prev) => ({ ...prev, variants: [...prev.variants, v] }));
+  }
+
+  function handleCreateCategory() {
+    const next = window.prompt('Nueva categoría:', draft.category || '');
+    if (!next) return;
+    const val = next.trim();
+    if (val) setDraft((prev) => ({ ...prev, category: val }));
   }
 
   const isValid =
     draft.title.trim().length > 0 &&
     draft.category.trim().length > 0 &&
     draft.variants.length > 0 &&
-    draft.variants.every((variant) => variant.name.trim().length > 0 && variant.sku.trim().length > 0);
+    draft.variants.every((v) => v.name.trim().length > 0 && v.sku.trim().length > 0);
 
-  function handleSave() {
-    onSave({
-      ...draft,
-      tags: tagsInput.split(',').map((tag) => tag.trim()).filter(Boolean),
-      updatedAt: new Date().toISOString(),
-    });
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await onSave({
+        ...draft,
+        tags: tagsInput.split(',').map((t) => t.trim()).filter(Boolean),
+        updatedAt: new Date().toISOString(),
+      });
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function handleCreateCategory() {
-    const nextCategory = window.prompt('Nueva categoria:', draft.category || '');
-    if (!nextCategory) return;
-    const value = nextCategory.trim();
-    if (!value) return;
-    setDraft((prev) => ({ ...prev, category: value }));
-  }
+  const INPUT = 'w-full rounded-xl border border-[rgba(17,17,16,0.10)] bg-white px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400 transition';
+  const LABEL = 'block space-y-1.5 text-[11px] font-semibold text-ink-500';
 
   return (
     <div className="fixed inset-0 z-50 flex">
-      <div className="flex-1" style={{ background: "rgba(17,17,16,0.40)", backdropFilter: "blur(4px)" }} onClick={onClose} />
-      <div className="h-full w-full max-w-3xl overflow-y-auto p-4 sm:p-6" style={{ borderLeft: '1px solid rgba(17,17,16,0.08)', background: '#f5f4ef' }}>
-        <div className="mb-5 flex items-center justify-between">
+      {/* backdrop */}
+      <div
+        className="flex-1"
+        style={{ background: 'rgba(17,17,16,0.40)', backdropFilter: 'blur(4px)' }}
+        onClick={onClose}
+      />
+
+      {/* drawer */}
+      <div
+        className="relative flex h-full w-full max-w-3xl flex-col overflow-hidden"
+        style={{ borderLeft: '1px solid rgba(17,17,16,0.08)', background: '#f5f4ef' }}
+      >
+        {/* header */}
+        <div className="shrink-0 flex items-center justify-between border-b border-[rgba(17,17,16,0.08)] px-5 py-4">
           <div>
             <p className="text-[15px] font-bold text-ink-900" style={{ letterSpacing: '-0.01em' }}>
-              {product.title ? 'Editar oferta comercial' : 'Crear oferta comercial'}
+              {product.title ? 'Editar producto' : 'Nuevo producto'}
             </p>
-            <p className="text-[12px] text-ink-400">Configura si vendes un físico, un servicio o una propuesta híbrida.</p>
+            <p className="text-[12px] text-ink-400">Completa la información para publicarlo en tu catálogo.</p>
           </div>
-          <button onClick={onClose} className="rounded-full p-2 text-ink-400 hover:bg-[rgba(17,17,16,0.06)] hover:text-ink-700 text-lg leading-none">×</button>
+          <button
+            onClick={onClose}
+            className="rounded-full p-2 text-ink-400 hover:bg-[rgba(17,17,16,0.06)] hover:text-ink-700 text-lg leading-none"
+          >
+            ×
+          </button>
         </div>
 
-        <div className="space-y-4">
-          <Card className="p-4">
-            <p className="mb-3 text-[12px] font-semibold uppercase text-ink-500" style={{ letterSpacing: '0.12em' }}>Tipo de oferta</p>
-            <div className="grid gap-2.5 md:grid-cols-3">
-              {(['physical', 'service', 'hybrid'] as OfferType[]).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setOfferType(type)}
-                  className={`rounded-2xl border p-3 text-left transition-all duration-150 ${
-                    draft.offerType === type
-                      ? 'border-brand-300/60 bg-brand-50/60 shadow-card'
-                      : 'border-[rgba(17,17,16,0.07)] bg-[rgba(17,17,16,0.02)] hover:bg-white/50'
-                  }`}
-                >
-                  <p className="text-[13px] font-semibold text-ink-800">{getOfferTypeLabel(type)}</p>
-                  <p className="mt-1 text-[11px] text-ink-400">{getOfferTypeDescription(type)}</p>
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 rounded-2xl border border-[rgba(17,17,16,0.06)] bg-[rgba(17,17,16,0.02)] p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Tag text={getOfferTypeLabel(draft.offerType)} color={getOfferTypeBadge(draft.offerType)} />
-                <Tag text={getPriceTypeLabel(draft.priceType)} color="bg-ink-100/60 text-ink-500" />
-                {draft.requiresBooking && <Tag text="Requiere agenda" color="bg-violet-100/70 text-violet-600" />}
-                {draft.requiresShipping && <Tag text="Requiere despacho" color="bg-sky-100/70 text-sky-600" />}
-              </div>
-              <p className="mt-2.5 text-[12px] text-ink-600">{getOfferTypeDescription(draft.offerType)}</p>
-              <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
-                {checklist.map((item) => (
-                  <div key={item} className="rounded-xl border border-[rgba(17,17,16,0.06)] bg-white/60 px-3 py-2 text-[11px] font-semibold text-ink-600">
-                    {item}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Card>
+        {/* scrollable body */}
+        <div className="flex-1 overflow-y-auto px-5 py-5">
+          <div className="space-y-4 pb-24">
 
-          <Card className="p-4">
-            <p className="mb-3 text-[12px] font-semibold uppercase text-ink-500" style={{ letterSpacing: '0.12em' }}>Información general</p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="space-y-1 text-[11px] font-medium text-ink-500">
-                Nombre comercial
-                <input value={draft.title} onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))} className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400" />
-              </label>
-              <label className="space-y-1 text-[11px] font-medium text-ink-500">
-                Marca o área
-                <input value={draft.brand} onChange={(e) => setDraft((prev) => ({ ...prev, brand: e.target.value }))} className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400" />
-              </label>
-              <label className="space-y-1 text-[11px] font-medium text-ink-500">
-                Categoría
-                <div className="flex gap-2">
-                  <select
-                    value={draft.category}
-                    onChange={(e) => setDraft((prev) => ({ ...prev, category: e.target.value }))}
-                    className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none"
-                  >
-                    <option value="">Selecciona una categoria</option>
-                    {categories.map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
-                    ))}
-                  </select>
-                  <Button type="button" variant="secondary" onClick={handleCreateCategory}>
-                    Nueva
-                  </Button>
-                </div>
-              </label>
-              <label className="space-y-1 text-[11px] font-medium text-ink-500">
-                Modelo de precio
-                <select
-                  value={draft.priceType}
-                  onChange={(e) => setDraft((prev) => ({ ...prev, priceType: e.target.value as PriceType }))}
-                  className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none"
-                >
-                  <option value="fixed">Precio fijo</option>
-                  <option value="variable">Precio variable</option>
-                  <option value="quote_required">Cotización requerida</option>
-                </select>
-                <p className="text-[11px] text-ink-400">
-                  {draft.priceType === 'fixed' && 'El cliente ve un valor cerrado.'}
-                  {draft.priceType === 'variable' && 'El valor puede cambiar según plan o alcance.'}
-                  {draft.priceType === 'quote_required' && 'La venta pasa primero por propuesta comercial.'}
-                </p>
-              </label>
-            </div>
-            <label className="mt-3 block space-y-1 text-xs text-ink-600">
-              Etiquetas
-              <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="corporativo, onboarding, bestseller" className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400" />
-            </label>
-            <div className="mt-4 rounded-2xl border border-[rgba(17,17,16,0.09)] bg-[rgba(17,17,16,0.025)] p-4">
-              <p className="text-sm font-semibold text-ink-900">Promocion o descuento</p>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1 text-xs text-ink-600">
-                  Titulo promocional
-                  <input
-                    value={getPromotion(draft).title ?? ''}
-                    onChange={(e) => setDraft((prev) => setPromotion(prev, { title: e.target.value }))}
-                    placeholder="Oferta de lanzamiento"
-                    className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400"
-                  />
-                </label>
-                <label className="space-y-1 text-xs text-ink-600">
-                  Tipo
-                  <select
-                    value={getPromotion(draft).type ?? 'percentage'}
-                    onChange={(e) => setDraft((prev) => setPromotion(prev, { type: e.target.value }))}
-                    className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400"
-                  >
-                    <option value="percentage">Porcentaje</option>
-                    <option value="fixed">Valor fijo</option>
-                  </select>
-                </label>
-                <label className="space-y-1 text-xs text-ink-600">
-                  Valor
-                  <input
-                    type="number"
-                    min={0}
-                    value={getPromotion(draft).value ?? 0}
-                    onChange={(e) => setDraft((prev) => setPromotion(prev, { value: Number(e.target.value) }))}
-                    className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400"
-                  />
-                </label>
-                <label className="flex items-center gap-2 rounded-lg border border-[rgba(17,17,16,0.09)] bg-white/70 backdrop-blur-sm px-3 py-2 text-sm text-ink-700">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(getPromotion(draft).active)}
-                    onChange={(e) => setDraft((prev) => setPromotion(prev, { active: e.target.checked }))}
-                  />
-                  Promocion activa
-                </label>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-ink-900">
-                  {draft.offerType === 'physical' && 'Logística física'}
-                  {draft.offerType === 'service' && 'Prestación del servicio'}
-                  {draft.offerType === 'hybrid' && 'Prestación y logística'}
-                </p>
-                <p className="mt-1 text-xs text-ink-400">
-                  {draft.offerType === 'physical' && 'Solo verás campos de despacho y estado del producto.'}
-                  {draft.offerType === 'service' && 'Solo verás campos de agenda, modalidad y capacidad.'}
-                  {draft.offerType === 'hybrid' && 'Aquí defines qué parte se agenda y qué parte se entrega físicamente.'}
-                </p>
-              </div>
-              <label className="space-y-1 text-xs text-ink-600 min-w-[150px]">
-                Estado
+            {/* ── Card 1: Información del producto ── */}
+            <Card className="p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <p className="text-[13px] font-bold text-ink-900">Información del producto</p>
                 <select
                   value={draft.status}
                   onChange={(e) => setDraft((prev) => ({ ...prev, status: e.target.value as Product['status'] }))}
-                  className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400"
+                  className="rounded-full border border-[rgba(17,17,16,0.10)] bg-white px-3 py-1.5 text-[11px] font-semibold text-ink-700 outline-none"
                 >
                   <option value="active">Activo</option>
                   <option value="draft">Borrador</option>
                   <option value="archived">Archivado</option>
                 </select>
-              </label>
-            </div>
-
-            {draft.offerType === 'physical' && (
-              <div className="space-y-3">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="flex items-center justify-between rounded-xl border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm text-ink-700">
-                    Requiere despacho
-                    <input type="checkbox" checked={draft.requiresShipping} onChange={(e) => setDraft((prev) => ({ ...prev, requiresShipping: e.target.checked }))} />
-                  </label>
-                  <div className="rounded-xl border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm text-ink-700">
-                    <p className="font-semibold text-ink-900">Qué vas a gestionar</p>
-                    <p className="mt-1 text-xs text-ink-400">Stock, reservados, reposición y entrega.</p>
-                  </div>
-                </div>
-                <label className="block space-y-1 text-xs text-ink-600">
-                  Notas logísticas
-                  <textarea value={draft.fulfillmentNotes} onChange={(e) => setDraft((prev) => ({ ...prev, fulfillmentNotes: e.target.value }))} rows={3} placeholder="Bodega central, entrega en 24h, retiro en tienda..." className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400" />
-                </label>
               </div>
-            )}
 
-            {draft.offerType === 'service' && (
               <div className="space-y-3">
+                <label className={LABEL}>
+                  Nombre del producto
+                  <input
+                    value={draft.title}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))}
+                    placeholder="Ej: Camiseta Oversized Negra"
+                    className={INPUT}
+                  />
+                </label>
+
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1 text-xs text-ink-600">
-                    Modalidad del servicio
+                  <label className={LABEL}>
+                    Marca
+                    <input
+                      value={draft.brand}
+                      onChange={(e) => setDraft((prev) => ({ ...prev, brand: e.target.value }))}
+                      placeholder="Ej: Nike, propia, sin marca"
+                      className={INPUT}
+                    />
+                  </label>
+
+                  <label className={LABEL}>
+                    Categoría
+                    <div className="flex gap-2">
+                      <select
+                        value={draft.category}
+                        onChange={(e) => setDraft((prev) => ({ ...prev, category: e.target.value }))}
+                        className={INPUT}
+                      >
+                        <option value="">Selecciona</option>
+                        {categories.map((cat) => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleCreateCategory}
+                        className="shrink-0 rounded-xl border border-[rgba(17,17,16,0.10)] bg-white px-3 text-[11px] font-semibold text-ink-600 hover:bg-[rgba(17,17,16,0.04)]"
+                      >
+                        + Nueva
+                      </button>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className={LABEL}>
+                    Modelo de precio
                     <select
-                      value={draft.serviceMode}
-                      onChange={(e) => setDraft((prev) => ({ ...prev, serviceMode: e.target.value as ServiceMode }))}
-                      className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400"
+                      value={draft.priceType}
+                      onChange={(e) => setDraft((prev) => ({ ...prev, priceType: e.target.value as PriceType }))}
+                      className={INPUT}
                     >
-                      <option value="remote">Remoto</option>
-                      <option value="onsite">Presencial</option>
-                      <option value="hybrid">Híbrido</option>
+                      <option value="fixed">Precio fijo</option>
+                      <option value="variable">Precio variable</option>
+                      <option value="quote_required">Cotización requerida</option>
                     </select>
+                    <span className="text-[10px] font-normal text-ink-400">
+                      {draft.priceType === 'fixed' && 'El cliente ve un valor cerrado por variante.'}
+                      {draft.priceType === 'variable' && 'El valor puede cambiar según el plan o alcance.'}
+                      {draft.priceType === 'quote_required' && 'La venta pasa primero por propuesta comercial.'}
+                    </span>
                   </label>
-                  <label className="flex items-center justify-between rounded-xl border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm text-ink-700">
-                    Requiere agenda
-                    <input type="checkbox" checked={draft.requiresBooking} onChange={(e) => setDraft((prev) => ({ ...prev, requiresBooking: e.target.checked }))} />
-                  </label>
-                  <label className="space-y-1 text-xs text-ink-600">
-                    Duración base (min)
-                    <input
-                      type="number"
-                      min={0}
-                      value={draft.serviceDurationMinutes}
-                      onChange={(e) => setDraft((prev) => ({ ...prev, serviceDurationMinutes: Number(e.target.value) }))}
-                      className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400"
-                    />
-                  </label>
-                  <label className="space-y-1 text-xs text-ink-600">
-                    Capacidad simultánea
-                    <input
-                      type="number"
-                      min={0}
-                      value={draft.capacity}
-                      onChange={(e) => setDraft((prev) => ({ ...prev, capacity: Number(e.target.value) }))}
-                      className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400"
-                    />
-                  </label>
-                </div>
-                <label className="block space-y-1 text-xs text-ink-600">
-                  Notas de prestación
-                  <textarea value={draft.fulfillmentNotes} onChange={(e) => setDraft((prev) => ({ ...prev, fulfillmentNotes: e.target.value }))} rows={3} placeholder="Incluye videollamada, asesor asignado, confirmación previa..." className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400" />
-                </label>
-              </div>
-            )}
 
-            {draft.offerType === 'hybrid' && (
-              <div className="space-y-3">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1 text-xs text-ink-600">
-                    Modalidad de prestación
+                  <label className={LABEL}>
+                    Moneda
                     <select
-                      value={draft.serviceMode}
-                      onChange={(e) => setDraft((prev) => ({ ...prev, serviceMode: e.target.value as ServiceMode }))}
-                      className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400"
+                      value={getCurrency(draft)}
+                      onChange={(e) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          attributes: { ...(prev.attributes ?? {}), currency: e.target.value },
+                        }))
+                      }
+                      className={INPUT}
                     >
-                      <option value="remote">Remoto</option>
-                      <option value="onsite">Presencial</option>
-                      <option value="hybrid">Híbrido</option>
+                      {CURRENCIES.map((c) => (
+                        <option key={c.code} value={c.code}>{c.label}</option>
+                      ))}
                     </select>
+                    <span className="text-[10px] font-normal text-ink-400">
+                      Se aplica a todas las variantes.
+                    </span>
                   </label>
-                  <label className="flex items-center justify-between rounded-xl border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm text-ink-700">
-                    Requiere agenda
-                    <input type="checkbox" checked={draft.requiresBooking} onChange={(e) => setDraft((prev) => ({ ...prev, requiresBooking: e.target.checked }))} />
-                  </label>
-                  <label className="flex items-center justify-between rounded-xl border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm text-ink-700">
-                    Requiere despacho
-                    <input type="checkbox" checked={draft.requiresShipping} onChange={(e) => setDraft((prev) => ({ ...prev, requiresShipping: e.target.checked }))} />
-                  </label>
-                  <div className="rounded-xl border border-[rgba(17,17,16,0.09)] px-3 py-2 text-sm text-ink-700">
-                    <p className="font-semibold text-ink-900">Qué vas a coordinar</p>
-                    <p className="mt-1 text-xs text-ink-400">Inventario físico + agenda + entrega del servicio.</p>
-                  </div>
-                  <label className="space-y-1 text-xs text-ink-600">
-                    Duración base (min)
+
+                  <label className={LABEL}>
+                    Etiquetas
                     <input
-                      type="number"
-                      min={0}
-                      value={draft.serviceDurationMinutes}
-                      onChange={(e) => setDraft((prev) => ({ ...prev, serviceDurationMinutes: Number(e.target.value) }))}
-                      className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400"
+                      value={tagsInput}
+                      onChange={(e) => setTagsInput(e.target.value)}
+                      placeholder="verano, bestseller, nuevo"
+                      className={INPUT}
                     />
-                  </label>
-                  <label className="space-y-1 text-xs text-ink-600">
-                    Capacidad simultánea
-                    <input
-                      type="number"
-                      min={0}
-                      value={draft.capacity}
-                      onChange={(e) => setDraft((prev) => ({ ...prev, capacity: Number(e.target.value) }))}
-                      className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400"
-                    />
+                    <span className="text-[10px] font-normal text-ink-400">Separadas por coma</span>
                   </label>
                 </div>
-                <label className="block space-y-1 text-xs text-ink-600">
-                  Notas operativas combinadas
-                  <textarea value={draft.fulfillmentNotes} onChange={(e) => setDraft((prev) => ({ ...prev, fulfillmentNotes: e.target.value }))} rows={3} placeholder="Enviar kit antes de la sesión, instalación en sede, activación remota..." className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400" />
-                </label>
               </div>
-            )}
-          </Card>
+            </Card>
 
-          <Card className="p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-ink-900">Galeria del producto</p>
-                <p className="mt-1 text-xs text-ink-400">Hasta 5 imagenes. La primera se usa como principal en catalogo y ficha.</p>
+            {/* ── Card 2: Galería ── */}
+            <Card className="p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <p className="text-[13px] font-bold text-ink-900">Galería de imágenes</p>
+                  <p className="mt-0.5 text-[11px] text-ink-400">Hasta 5 imágenes. La primera se usa como portada.</p>
+                </div>
+                <span className="rounded-full bg-[rgba(17,17,16,0.05)] px-2.5 py-1 text-[10px] font-semibold text-ink-500">
+                  {draft.images.length}/5
+                </span>
               </div>
-              <span className="rounded-full bg-[rgba(17,17,16,0.05)] px-2.5 py-1 text-[10px] font-semibold text-ink-500">
-                {draft.images.length}/5
-              </span>
-            </div>
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+
+              {/* hidden file input */}
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileInputChange}
+              />
+
+              <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-5">
                 {Array.from({ length: 5 }).map((_, index) => {
                   const image = draft.images[index];
                   const isPrimary = index === 0 && Boolean(image);
                   return (
-                    <div key={index} className="space-y-2">
-                      <div className="relative h-[120px] overflow-hidden rounded-xl border border-[rgba(17,17,16,0.09)] bg-[rgba(17,17,16,0.025)]">
-                        {image ? (
-                          <img src={image} alt={`${draft.title || 'producto'} ${index + 1}`} className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full items-center justify-center px-3 text-center text-xs text-ink-400">
-                            {index === 0 ? 'Portada principal' : 'Imagen opcional'}
-                          </div>
-                        )}
-                        {isPrimary ? (
-                          <span className="absolute left-2 top-2 rounded-full bg-brand-500 px-2 py-1 text-[9px] font-semibold text-white">Principal</span>
-                        ) : null}
-                      </div>
+                    <div key={index} className="flex flex-col gap-1.5">
                       {image ? (
-                        <div className="grid gap-1">
-                          <button onClick={() => openExistingImageCrop(index)} className="rounded-full border border-[rgba(17,17,16,0.12)] bg-white/80 px-2.5 py-1.5 text-[10px] font-semibold text-ink-700 transition hover:bg-white">
-                            Recortar
-                          </button>
-                          {!isPrimary ? (
-                            <button onClick={() => makeImagePrimary(index)} className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1.5 text-[10px] font-semibold text-brand-700 transition hover:bg-brand-100">
-                              Hacer principal
-                            </button>
+                        /* Filled slot */
+                        <div className="relative overflow-hidden rounded-xl border border-[rgba(17,17,16,0.09)] bg-[rgba(17,17,16,0.025)]" style={{ aspectRatio: '4/5' }}>
+                          <img
+                            src={image}
+                            alt={`${draft.title || 'producto'} ${index + 1}`}
+                            className="h-full w-full object-cover"
+                          />
+                          {isPrimary ? (
+                            <span className="absolute left-1.5 top-1.5 rounded-full bg-brand-500 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                              Portada
+                            </span>
                           ) : null}
-                          <button onClick={() => removeImage(index)} className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1.5 text-[10px] font-semibold text-red-700 transition hover:bg-red-100">
-                            Eliminar
-                          </button>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/40 opacity-0 transition-opacity hover:opacity-100">
+                            <button
+                              onClick={() => openExistingImageCrop(index)}
+                              className="rounded-lg bg-white/90 px-2 py-1 text-[10px] font-semibold text-ink-800"
+                            >
+                              Recortar
+                            </button>
+                            {!isPrimary ? (
+                              <button
+                                onClick={() => makeImagePrimary(index)}
+                                className="rounded-lg bg-brand-500/90 px-2 py-1 text-[10px] font-semibold text-white"
+                              >
+                                Principal
+                              </button>
+                            ) : null}
+                            <button
+                              onClick={() => removeImage(index)}
+                              className="rounded-lg bg-red-500/90 px-2 py-1 text-[10px] font-semibold text-white"
+                            >
+                              Quitar
+                            </button>
+                          </div>
                         </div>
-                      ) : null}
+                      ) : (
+                        /* Empty slot — click to upload */
+                        <button
+                          type="button"
+                          onClick={() => handleSlotClick(index)}
+                          disabled={draft.images.length >= 5 && index >= draft.images.length}
+                          className="flex flex-col items-center justify-center gap-1 overflow-hidden rounded-xl border border-dashed border-[rgba(17,17,16,0.14)] bg-[rgba(17,17,16,0.02)] text-ink-400 transition hover:border-brand-300 hover:bg-brand-50/50 hover:text-brand-500"
+                          style={{ aspectRatio: '4/5' }}
+                        >
+                          <ImagePlus size={16} />
+                          <span className="text-[9px] font-semibold leading-tight text-center px-1">
+                            {index === 0 ? 'Portada' : 'Agregar'}
+                          </span>
+                        </button>
+                      )}
                     </div>
                   );
                 })}
               </div>
-              <div className="flex flex-wrap gap-2">
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[rgba(17,17,16,0.12)] px-3 py-2 text-xs font-semibold text-ink-700 hover:bg-[rgba(17,17,16,0.025)]">
-                  <ImagePlus size={14} />
-                  Subir imagenes
-                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
-                </label>
-                <button onClick={handleImageUrlAdd} className="inline-flex items-center gap-2 rounded-lg border border-[rgba(17,17,16,0.12)] px-3 py-2 text-xs font-semibold text-ink-700 hover:bg-[rgba(17,17,16,0.025)]">
-                  <Plus size={14} />
-                  Agregar por URL
+              {uploadingImage ? (
+                <div className="mt-3 flex items-center gap-2 text-[12px] text-ink-400">
+                  <Loader2 size={13} className="animate-spin" />
+                  Subiendo imagen...
+                </div>
+              ) : null}
+            </Card>
+
+            {/* ── Card 3: Variantes ── */}
+            <Card className="p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <p className="text-[13px] font-bold text-ink-900">Variantes del producto</p>
+                  <p className="mt-0.5 text-[11px] text-ink-400">Cada variante tiene su propio SKU, precio y stock.</p>
+                </div>
+                <button
+                  onClick={() => setDraft((prev) => ({ ...prev, variants: [...prev.variants, newVariant()] }))}
+                  className="rounded-full border border-brand-200 bg-brand-50 px-3 py-1.5 text-[11px] font-semibold text-brand-700 transition hover:bg-brand-100"
+                >
+                  + Agregar
                 </button>
               </div>
-            </div>
-          </Card>
 
-          <Card className="p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-ink-900">{getVariantBlockTitle(draft.offerType)}</p>
-                <p className="mt-1 text-xs text-ink-400">{getVariantBlockDescription(draft.offerType)}</p>
+              <div className="space-y-3">
+                {draft.variants.map((variant, idx) => (
+                  <div key={variant.id} className="rounded-xl border border-[rgba(17,17,16,0.09)] bg-white/60 p-3.5">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-[11px] font-bold text-ink-600 uppercase tracking-wide">
+                        Variante #{idx + 1}
+                      </p>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => copyVariant(idx)}
+                          title="Duplicar variante"
+                          className="rounded-lg border border-[rgba(17,17,16,0.09)] p-1.5 text-ink-400 transition hover:bg-[rgba(17,17,16,0.05)] hover:text-ink-700"
+                        >
+                          <Copy size={12} />
+                        </button>
+                        {draft.variants.length > 1 ? (
+                          <button
+                            onClick={() => removeVariant(idx)}
+                            className="rounded-lg border border-red-200/70 p-1.5 text-red-400 transition hover:bg-red-50"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2.5 sm:grid-cols-2">
+                      <label className={LABEL}>
+                        Nombre de la variante
+                        <input
+                          value={variant.name}
+                          onChange={(e) => updateVariant(idx, { name: e.target.value })}
+                          placeholder="Ej: Talla M / Negro"
+                          className={INPUT}
+                        />
+                      </label>
+                      <label className={LABEL}>
+                        SKU interno
+                        <input
+                          value={variant.sku}
+                          onChange={(e) => updateVariant(idx, { sku: e.target.value })}
+                          placeholder="CAM-M-NEG-001"
+                          className={INPUT}
+                        />
+                      </label>
+                      <label className={LABEL}>
+                        Precio ({getCurrency(draft)})
+                        <input
+                          type="number"
+                          min={0}
+                          value={variant.price}
+                          onChange={(e) => updateVariant(idx, { price: Number(e.target.value) })}
+                          placeholder="85000"
+                          className={INPUT}
+                        />
+                      </label>
+                      <label className={LABEL}>
+                        Costo interno
+                        <input
+                          type="number"
+                          min={0}
+                          value={variant.cost}
+                          onChange={(e) => updateVariant(idx, { cost: Number(e.target.value) })}
+                          placeholder="0"
+                          className={INPUT}
+                        />
+                      </label>
+                      <label className={LABEL}>
+                        Stock disponible
+                        <input
+                          type="number"
+                          min={0}
+                          value={variant.stock}
+                          onChange={(e) => updateVariant(idx, { stock: Number(e.target.value) })}
+                          placeholder="10"
+                          className={INPUT}
+                        />
+                      </label>
+                      <label className={LABEL}>
+                        Unidades reservadas
+                        <input
+                          type="number"
+                          min={0}
+                          value={variant.reserved}
+                          onChange={(e) => updateVariant(idx, { reserved: Number(e.target.value) })}
+                          placeholder="0"
+                          className={INPUT}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <button onClick={() => setDraft((prev) => ({ ...prev, variants: [...prev.variants, newVariant(prev.offerType)] }))} className="rounded-lg bg-brand-100 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-200">
-                + Agregar
-              </button>
-            </div>
-            <div className="space-y-3">
-              {draft.variants.map((variant, idx) => (
-                <div key={variant.id} className="rounded-xl border border-[rgba(17,17,16,0.09)] p-3">
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-xs font-semibold text-ink-700">
-                      {draft.offerType === 'physical' && `Variante #${idx + 1}`}
-                      {draft.offerType === 'service' && `Plan #${idx + 1}`}
-                      {draft.offerType === 'hybrid' && `Paquete #${idx + 1}`}
-                    </p>
-                    {draft.variants.length > 1 && (
-                      <button onClick={() => removeVariant(idx)} className="rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">
-                        Eliminar
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="space-y-1 text-[11px] font-medium text-ink-500">
-                      {getVariantNameLabel(draft.offerType)}
-                      <input value={variant.name} onChange={(e) => updateVariant(idx, { name: e.target.value })} placeholder={getVariantNamePlaceholder(draft.offerType)} className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400" />
-                    </label>
-                    <label className="space-y-1 text-[11px] font-medium text-ink-500">
-                      SKU interno
-                      <input value={variant.sku} onChange={(e) => updateVariant(idx, { sku: e.target.value })} placeholder="ASE-SUB-REM-45" className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400" />
-                    </label>
-                    <label className="space-y-1 text-[11px] font-medium text-ink-500">
-                      Precio
-                      <input type="number" min={0} value={variant.price} onChange={(e) => updateVariant(idx, { price: Number(e.target.value) })} placeholder="85000" className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400" />
-                    </label>
-                    <label className="space-y-1 text-[11px] font-medium text-ink-500">
-                      Costo interno
-                      <input type="number" min={0} value={variant.cost} onChange={(e) => updateVariant(idx, { cost: Number(e.target.value) })} placeholder="0" className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400" />
-                    </label>
-                    {draft.offerType !== 'service' && (
-                      <>
-                        <label className="space-y-1 text-[11px] font-medium text-ink-500">
-                          Stock disponible
-                          <input type="number" min={0} value={variant.stock} onChange={(e) => updateVariant(idx, { stock: Number(e.target.value) })} placeholder="10" className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400" />
-                        </label>
-                        <label className="space-y-1 text-[11px] font-medium text-ink-500">
-                          Unidades reservadas
-                          <input type="number" min={0} value={variant.reserved} onChange={(e) => updateVariant(idx, { reserved: Number(e.target.value) })} placeholder="2" className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400" />
-                        </label>
-                      </>
-                    )}
-                    {draft.offerType !== 'physical' && (
-                      <>
-                        <label className="space-y-1 text-[11px] font-medium text-ink-500">
-                          Duración (min)
-                          <input type="number" min={0} value={variant.durationMinutes} onChange={(e) => updateVariant(idx, { durationMinutes: Number(e.target.value) })} placeholder="45" className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400" />
-                        </label>
-                        <label className="space-y-1 text-[11px] font-medium text-ink-500">
-                          Capacidad o cupos
-                          <input type="number" min={0} value={variant.capacity} onChange={(e) => updateVariant(idx, { capacity: Number(e.target.value) })} placeholder="8" className="w-full rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 text-[13px] text-ink-800 outline-none focus:border-brand-400" />
-                        </label>
-                      </>
-                    )}
-                  </div>
+
+              {/* Quick size chips */}
+              <div className="mt-3 border-t border-[rgba(17,17,16,0.06)] pt-3">
+                <p className="mb-2 text-[11px] font-semibold text-ink-400">Agregar talla rápida</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {QUICK_SIZES.map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => addQuickVariant(size)}
+                      className="rounded-full border border-[rgba(17,17,16,0.10)] bg-white px-3 py-1.5 text-[11px] font-semibold text-ink-600 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+                    >
+                      {size}
+                    </button>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </Card>
+              </div>
+            </Card>
+
+            {/* ── Card 4: Promoción ── */}
+            <Card className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[13px] font-bold text-ink-900">Promoción o descuento</p>
+                  <p className="mt-0.5 text-[11px] text-ink-400">Opcional. Se mostrará en el catálogo si está activa.</p>
+                </div>
+                <Toggle
+                  checked={Boolean(promo.active)}
+                  onChange={(val) => setDraft((prev) => setPromotion(prev, { active: val }))}
+                />
+              </div>
+
+              {promo.active ? (
+                <div className="mt-4 space-y-3">
+                  <label className={LABEL}>
+                    Título de la promoción
+                    <input
+                      value={promo.title ?? ''}
+                      onChange={(e) => setDraft((prev) => setPromotion(prev, { title: e.target.value }))}
+                      placeholder="Ej: Oferta de lanzamiento, 2x1, Liquidación"
+                      className={INPUT}
+                    />
+                  </label>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold text-ink-500">Tipo de descuento</p>
+                      <div className="flex gap-2">
+                        {[
+                          { value: 'percentage', label: '%' },
+                          { value: 'fixed', label: '$' },
+                        ].map((opt) => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setDraft((prev) => setPromotion(prev, { type: opt.value }))}
+                            className={`flex-1 rounded-xl border py-2.5 text-sm font-bold transition ${
+                              (promo.type ?? 'percentage') === opt.value
+                                ? 'border-brand-400 bg-brand-50 text-brand-700'
+                                : 'border-[rgba(17,17,16,0.10)] bg-white text-ink-600 hover:border-[rgba(17,17,16,0.18)]'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <label className={LABEL}>
+                      Valor del descuento
+                      <input
+                        type="number"
+                        min={0}
+                        value={promo.value ?? 0}
+                        onChange={(e) => setDraft((prev) => setPromotion(prev, { value: Number(e.target.value) }))}
+                        placeholder={promo.type === 'fixed' ? '5000' : '15'}
+                        className={INPUT}
+                      />
+                    </label>
+                  </div>
+
+                  {promo.value ? (
+                    <div className="inline-flex items-center gap-2 rounded-full bg-brand-50 border border-brand-200 px-3 py-1.5">
+                      <span className="text-[12px] font-bold text-brand-700">
+                        {promo.type === 'fixed'
+                          ? `-$${(promo.value ?? 0).toLocaleString('es-CO')}`
+                          : `-${promo.value}%`}
+                      </span>
+                      <span className="text-[11px] text-brand-600">{promo.title || 'Descuento activo'}</span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="mt-3 text-[12px] text-ink-400">Sin promoción activa para este producto.</p>
+              )}
+            </Card>
+
+            {/* ── Card 5: Logística ── */}
+            <Card className="p-5">
+              <p className="mb-4 text-[13px] font-bold text-ink-900">Logística de entrega</p>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between rounded-xl border border-[rgba(17,17,16,0.09)] bg-white/70 px-4 py-3">
+                  <div>
+                    <p className="text-[13px] font-semibold text-ink-800">Requiere despacho</p>
+                    <p className="mt-0.5 text-[11px] text-ink-400">Activa si el producto se envía físicamente al cliente.</p>
+                  </div>
+                  <Toggle
+                    checked={draft.requiresShipping}
+                    onChange={(val) => setDraft((prev) => ({ ...prev, requiresShipping: val }))}
+                  />
+                </div>
+
+                <label className={LABEL}>
+                  Notas logísticas
+                  <textarea
+                    value={draft.fulfillmentNotes}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, fulfillmentNotes: e.target.value }))}
+                    rows={3}
+                    placeholder="Ej: Despacho desde bodega central en 24–48h. Retiro disponible en Bogotá."
+                    className={`${INPUT} resize-none`}
+                  />
+                </label>
+              </div>
+            </Card>
+
+          </div>
         </div>
 
-        <div className="sticky bottom-0 mt-5 flex items-center justify-end gap-2 pt-4" style={{ borderTop: '1px solid rgba(17,17,16,0.08)', background: '#f5f4ef' }}>
-          <p className="mr-auto text-[11px] text-ink-400">
-            {draft.offerType === 'physical' && 'Se guardará como producto físico listo para stock y despacho.'}
-            {draft.offerType === 'service' && 'Se guardará como servicio listo para agenda y reservas.'}
-            {draft.offerType === 'hybrid' && 'Se guardará como oferta híbrida con logística y prestación.'}
-          </p>
-          <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" onClick={handleSave} disabled={!isValid || uploadingImage}>
-            {uploadingImage ? 'Subiendo imagen...' : 'Guardar oferta'}
-          </Button>
+        {/* ── Floating action bar ── */}
+        <div
+          className="absolute bottom-0 left-0 right-0 z-10 px-5 pb-5 pt-10 pointer-events-none"
+          style={{ background: 'linear-gradient(to top, #f5f4ef 65%, transparent)' }}
+        >
+          <div className="pointer-events-auto flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full border border-[rgba(17,17,16,0.12)] bg-white/90 px-5 py-2.5 text-[13px] font-semibold text-ink-700 shadow-sm transition hover:bg-white"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={!isValid || saving || uploadingImage}
+              className="inline-flex items-center gap-2 rounded-full bg-brand-500 px-5 py-2.5 text-[13px] font-semibold text-white shadow-card transition hover:bg-brand-600 disabled:opacity-50"
+            >
+              {saving ? <Loader2 size={14} className="animate-spin" /> : null}
+              {saving ? 'Guardando...' : 'Guardar producto'}
+            </button>
+          </div>
         </div>
       </div>
+
       {cropSrc ? (
         <CropModal
           src={cropSrc}
@@ -873,6 +906,7 @@ function OfferEditor({ product, categories, onClose, onSave }: OfferEditorProps)
   );
 }
 
+/* ─── ProductsPage ─── */
 export function ProductsPage() {
   const { showError, showSuccess } = useNotification();
   const [products, setProducts] = useState<Product[]>([]);
@@ -882,7 +916,7 @@ export function ProductsPage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   const categories = useMemo(
-    () => ['all', ...Array.from(new Set([...DEFAULT_CATEGORIES, ...products.map((product) => product.category).filter(Boolean)]))],
+    () => ['all', ...Array.from(new Set([...DEFAULT_CATEGORIES, ...products.map((p) => p.category).filter(Boolean)]))],
     [products]
   );
   const [category, setCategory] = useState<string>('all');
@@ -900,36 +934,26 @@ export function ProductsPage() {
   });
 
   const summary = useMemo(() => ({
-    physical: products.filter((product) => product.offerType === 'physical').length,
-    service: products.filter((product) => product.offerType === 'service').length,
-    hybrid: products.filter((product) => product.offerType === 'hybrid').length,
+    physical: products.filter((p) => p.offerType === 'physical').length,
+    service: products.filter((p) => p.offerType === 'service').length,
+    hybrid: products.filter((p) => p.offerType === 'hybrid').length,
   }), [products]);
 
   useEffect(() => {
     let cancelled = false;
-
     async function loadProducts() {
       setLoading(true);
       try {
         const data = await api.getProducts();
-        if (!cancelled) {
-          setProducts(data.map(mapApiProductToUi));
-        }
+        if (!cancelled) setProducts(data.map(mapApiProductToUi));
       } catch (error) {
-        if (!cancelled) {
-          showError('Catalogo', error instanceof Error ? error.message : 'No se pudo cargar el catalogo.');
-        }
+        if (!cancelled) showError('Catálogo', error instanceof Error ? error.message : 'No se pudo cargar el catálogo.');
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     }
-
     void loadProducts();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [showError]);
 
   async function handleSaveProduct(product: Product) {
@@ -945,21 +969,20 @@ export function ProductsPage() {
         return exists ? prev.map((item) => (item.id === next.id ? next : item)) : [next, ...prev];
       });
       setSelectedProduct(null);
-      showSuccess('Oferta guardada');
+      showSuccess('Producto guardado');
     } catch (error) {
-      showError('Catalogo', error instanceof Error ? error.message : 'No se pudo guardar la oferta.');
+      showError('Catálogo', error instanceof Error ? error.message : 'No se pudo guardar el producto.');
+      throw error; // re-throw so OfferEditor's saving state resets
     }
   }
 
   async function handleDeleteProduct(id: string) {
     try {
-      if (!id.startsWith('offer-')) {
-        await api.deleteProduct(id);
-      }
-      setProducts((prev) => prev.filter((product) => product.id !== id));
-      showSuccess('Oferta eliminada');
+      if (!id.startsWith('offer-')) await api.deleteProduct(id);
+      setProducts((prev) => prev.filter((p) => p.id !== id));
+      showSuccess('Producto eliminado');
     } catch (error) {
-      showError('Catalogo', error instanceof Error ? error.message : 'No se pudo eliminar la oferta.');
+      showError('Catálogo', error instanceof Error ? error.message : 'No se pudo eliminar el producto.');
     }
   }
 
@@ -967,18 +990,18 @@ export function ProductsPage() {
     <div className="page-shell overflow-hidden">
       <div className="page-stack overflow-hidden">
         <PageHeader
-          eyebrow="Catalogo comercial"
+          eyebrow="Catálogo comercial"
           title="Catálogo comercial"
-          description="Gestiona productos físicos, servicios y ofertas híbridas sin mezclar la operación de cada uno."
+          description="Gestiona tu catálogo de productos físicos, con variantes, stock y logística."
           actions={
             <Button variant="primary" onClick={() => setSelectedProduct(newOffer())}>
-              <Plus size={14} /> Nueva oferta
+              <Plus size={14} /> Agregar producto
             </Button>
           }
         />
 
         {loading ? (
-          <Card className="shrink-0 p-4 text-[13px] text-ink-400">Cargando catalogo...</Card>
+          <Card className="shrink-0 p-4 text-[13px] text-ink-400">Cargando catálogo...</Card>
         ) : null}
 
         <div className="grid shrink-0 gap-3 md:grid-cols-3">
@@ -1002,12 +1025,19 @@ export function ProductsPage() {
         <Card className="shrink-0 p-3">
           <div className="flex items-center justify-between gap-3">
             <p className="text-[12px] font-semibold text-ink-700">Filtrar catálogo</p>
-            <p className="rounded-full bg-[rgba(17,17,16,0.05)] px-2.5 py-1 text-[10px] font-semibold text-ink-500">{filteredProducts.length} de {products.length}</p>
+            <p className="rounded-full bg-[rgba(17,17,16,0.05)] px-2.5 py-1 text-[10px] font-semibold text-ink-500">
+              {filteredProducts.length} de {products.length}
+            </p>
           </div>
           <div className="mt-2 grid gap-2 lg:grid-cols-[minmax(0,1.5fr)_150px_170px_auto]">
             <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2">
               <Search size={13} className="text-ink-400" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nombre, marca o tag..." className="w-full bg-transparent text-[13px] text-ink-700 outline-none placeholder:text-ink-300" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar por nombre, marca o tag..."
+                className="w-full bg-transparent text-[13px] text-ink-700 outline-none placeholder:text-ink-300"
+              />
             </div>
             <label className="flex min-w-0 items-center gap-2 rounded-2xl border border-[rgba(17,17,16,0.08)] bg-white/80 px-3 py-2">
               <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">Tipo</span>
@@ -1030,145 +1060,88 @@ export function ProductsPage() {
                 className="w-full bg-transparent text-[12px] font-medium text-ink-700 outline-none"
               >
                 {categories.map((item) => (
-                  <option key={item} value={item}>
-                    {item === 'all' ? 'Todas' : item}
-                  </option>
+                  <option key={item} value={item}>{item === 'all' ? 'Todas' : item}</option>
                 ))}
               </select>
             </label>
             <button
-              onClick={() => {
-                setSearch('');
-                setOfferType('all');
-                setCategory('all');
-              }}
+              onClick={() => { setSearch(''); setOfferType('all'); setCategory('all'); }}
               className="rounded-full border border-[rgba(17,17,16,0.08)] px-3 py-2 text-[11px] font-semibold text-ink-500 transition hover:bg-[rgba(17,17,16,0.04)]"
             >
               Limpiar
             </button>
           </div>
-          <div className="hidden mt-3 grid gap-2 lg:grid-cols-[minmax(0,1.35fr)_190px_210px]">
-            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2">
-              <Search size={13} className="text-ink-400" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nombre, marca o tag..." className="w-full bg-transparent text-[13px] text-ink-700 outline-none placeholder:text-ink-300" />
-            </div>
-            <label className="flex min-w-0 flex-col gap-1 rounded-2xl border border-[rgba(17,17,16,0.08)] bg-white/80 px-3 py-2">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">Tipo</span>
-              <select
-                value={offerType}
-                onChange={(e) => setOfferType(e.target.value as 'all' | OfferType)}
-                className="w-full bg-transparent text-[13px] font-medium text-ink-700 outline-none"
-              >
-                <option value="all">Todos</option>
-                <option value="physical">{getOfferTypeLabel('physical')}</option>
-                <option value="service">{getOfferTypeLabel('service')}</option>
-                <option value="hybrid">{getOfferTypeLabel('hybrid')}</option>
-              </select>
-            </label>
-            <div className="hidden flex-wrap gap-1.5">
-              {(['all', 'physical', 'service', 'hybrid'] as Array<'all' | OfferType>).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setOfferType(type)}
-                  className={`rounded-full px-3.5 py-1.5 text-[11px] font-semibold transition ${
-                    offerType === type ? 'bg-brand-500 text-white shadow-card' : 'bg-[rgba(17,17,16,0.05)] text-ink-600 hover:bg-[rgba(17,17,16,0.08)]'
-                  }`}
-                >
-                  {type === 'all' ? 'Todos' : getOfferTypeLabel(type)}
-                </button>
-              ))}
-            </div>
-            <label className="flex min-w-0 flex-col gap-1 rounded-2xl border border-[rgba(17,17,16,0.08)] bg-white/80 px-3 py-2">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-400">Categoria</span>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-transparent text-[13px] font-medium text-ink-700 outline-none"
-              >
-                {categories.map((item) => (
-                  <option key={item} value={item}>
-                    {item === 'all' ? 'Todas las categorÃ­as' : item}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="hidden flex-wrap gap-1.5">
-              {categories.map((item) => (
-                <button
-                  key={item}
-                  onClick={() => setCategory(item)}
-                  className={`rounded-full px-3.5 py-1.5 text-[11px] font-semibold transition ${
-                    category === item ? 'bg-ink-800 text-white' : 'bg-[rgba(17,17,16,0.05)] text-ink-600 hover:bg-[rgba(17,17,16,0.08)]'
-                  }`}
-                >
-                  {item === 'all' ? 'Todas las categorías' : item}
-                </button>
-              ))}
-            </div>
-          </div>
         </Card>
 
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
           <div className="grid gap-2.5 lg:grid-cols-2 2xl:grid-cols-3">
-          {filteredProducts.map((product) => (
-            <Card key={product.id} className="overflow-hidden">
-              <div className="grid grid-cols-1 gap-0 sm:grid-cols-[92px_1fr]">
-                <div className="h-[128px] rounded-l-3xl sm:h-full sm:min-h-[128px]" style={{ background: 'rgba(17,17,16,0.05)' }}>
-                  {product.images[0] ? <img src={product.images[0]} alt={product.title} className="h-full w-full rounded-l-3xl object-cover" /> : null}
+            {filteredProducts.map((product) => (
+              <Card key={product.id} className="overflow-hidden">
+                <div className="grid grid-cols-1 gap-0 sm:grid-cols-[92px_1fr]">
+                  <div className="h-[128px] rounded-l-3xl sm:h-full sm:min-h-[128px]" style={{ background: 'rgba(17,17,16,0.05)' }}>
+                    {product.images[0] ? (
+                      <img src={product.images[0]} alt={product.title} className="h-full w-full rounded-l-3xl object-cover" />
+                    ) : null}
+                  </div>
+                  <div className="space-y-2.5 p-3">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Tag text={getOfferTypeLabel(product.offerType)} color={getOfferTypeBadge(product.offerType)} />
+                      <Tag text={getPriceTypeLabel(product.priceType)} color="bg-ink-100/60 text-ink-500" />
+                      {formatPromotionLabel(product) ? (
+                        <Tag text={formatPromotionLabel(product)} color="bg-brand-100/70 text-brand-700" />
+                      ) : null}
+                      {product.requiresShipping && <Tag text="Despacho" color="bg-sky-50/80 text-sky-600" />}
+                    </div>
+                    <div>
+                      <p className="text-[13px] font-bold text-ink-900" style={{ letterSpacing: '-0.01em' }}>{product.title}</p>
+                      <p className="text-[12px] text-ink-400">{product.brand} · {product.category}</p>
+                    </div>
+                    <p className="line-clamp-2 text-[11px] text-ink-500">{product.fulfillmentNotes}</p>
+                    <div className="grid gap-1.5 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-[rgba(17,17,16,0.06)] bg-[rgba(17,17,16,0.025)] px-2.5 py-2">
+                        <p className="lab-stat-label">Stock</p>
+                        <p className="mt-0.5 text-[12px] font-bold text-ink-800">
+                          {getProductAvailableUnits(product)} und disponibles
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-[rgba(17,17,16,0.06)] bg-[rgba(17,17,16,0.025)] px-2.5 py-2">
+                        <p className="lab-stat-label">Precio base · <span className="font-bold">{getCurrency(product)}</span></p>
+                        <p className="mt-0.5 text-[12px] font-bold text-ink-800">
+                          {formatPrice(product.variants[0]?.price ?? 0, getCurrency(product))}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex flex-wrap gap-1">
+                        {product.tags.slice(0, 3).map((tag) => (
+                          <Tag key={tag} text={tag} color="bg-ink-100/60 text-ink-500" />
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-1 self-end sm:self-auto">
+                        <button
+                          onClick={() => setSelectedProduct(product)}
+                          className="rounded-xl border border-[rgba(17,17,16,0.08)] p-1.5 text-ink-400 transition hover:bg-[rgba(17,17,16,0.06)] hover:text-ink-700"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          onClick={() => { setProducts((prev) => [copyOffer(product), ...prev]); showSuccess('Producto duplicado'); }}
+                          className="rounded-xl border border-[rgba(17,17,16,0.08)] p-1.5 text-ink-400 transition hover:bg-[rgba(17,17,16,0.06)] hover:text-ink-700"
+                        >
+                          <Copy size={13} />
+                        </button>
+                        <button
+                          onClick={() => void handleDeleteProduct(product.id)}
+                          className="rounded-xl border border-red-200/60 p-1.5 text-red-400 transition hover:bg-red-50/60"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2.5 p-3">
-                  <div className="flex flex-wrap items-center gap-1">
-                    <Tag text={getOfferTypeLabel(product.offerType)} color={getOfferTypeBadge(product.offerType)} />
-                    <Tag text={getPriceTypeLabel(product.priceType)} color="bg-ink-100/60 text-ink-500" />
-                    {formatPromotionLabel(product) ? <Tag text={formatPromotionLabel(product)} color="bg-brand-100/70 text-brand-700" /> : null}
-                    {product.requiresBooking && <Tag text="Agenda" color="bg-violet-50/80 text-violet-600" />}
-                    {product.requiresShipping && <Tag text="Despacho" color="bg-sky-50/80 text-sky-600" />}
-                  </div>
-                  <div>
-                    <p className="text-[13px] font-bold text-ink-900" style={{ letterSpacing: '-0.01em' }}>{product.title}</p>
-                    <p className="text-[12px] text-ink-400">{product.brand} · {product.category}</p>
-                  </div>
-                  <p className="line-clamp-2 text-[11px] text-ink-500">{product.fulfillmentNotes}</p>
-                  <div className="grid gap-1.5 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-[rgba(17,17,16,0.06)] bg-[rgba(17,17,16,0.025)] px-2.5 py-2">
-                      <p className="lab-stat-label">Operación</p>
-                      <p className="mt-0.5 text-[12px] font-bold text-ink-800">
-                        {product.offerType === 'physical' && `${getProductAvailableUnits(product)} und disponibles`}
-                        {product.offerType === 'service' && `${product.capacity} cupos por bloque`}
-                        {product.offerType === 'hybrid' && `${getProductAvailableUnits(product)} kits + ${product.capacity} cupos`}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-[rgba(17,17,16,0.06)] bg-[rgba(17,17,16,0.025)] px-2.5 py-2">
-                      <p className="lab-stat-label">Precio base</p>
-                      <p className="mt-0.5 text-[12px] font-bold text-ink-800">{formatCop(product.variants[0]?.price ?? 0)}</p>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex flex-wrap gap-1">
-                      {product.tags.slice(0, 3).map((tag) => <Tag key={tag} text={tag} color="bg-ink-100/60 text-ink-500" />)}
-                    </div>
-                    <div className="flex items-center gap-1 self-end sm:self-auto">
-                      <button onClick={() => setSelectedProduct(product)} className="rounded-xl border border-[rgba(17,17,16,0.08)] p-1.5 text-ink-400 transition hover:bg-[rgba(17,17,16,0.06)] hover:text-ink-700">
-                        <Pencil size={13} />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setProducts((prev) => [copyOffer(product), ...prev]);
-                          showSuccess('Oferta duplicada');
-                        }}
-                        className="rounded-xl border border-[rgba(17,17,16,0.08)] p-1.5 text-ink-400 transition hover:bg-[rgba(17,17,16,0.06)] hover:text-ink-700"
-                      >
-                        <Package size={13} />
-                      </button>
-                      <button onClick={() => handleDeleteProduct(product.id)} className="rounded-xl border border-red-200/60 p-1.5 text-red-400 transition hover:bg-red-50/60">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            ))}
           </div>
         </div>
       </div>

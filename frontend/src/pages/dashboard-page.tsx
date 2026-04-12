@@ -41,6 +41,7 @@ type DashboardConversation = {
   channel: string;
   createdAt: string;
   lastMessageAt: string;
+  activeAiAgent?: string;
 };
 
 interface DashboardDataState {
@@ -160,6 +161,7 @@ export default function DashboardPage() {
                 channel: item.canal,
                 createdAt: item.created_at,
                 lastMessageAt: item.last_message_at,
+                activeAiAgent: item.active_ai_agent ?? '',
               }))
             : [],
         knowledgeArticles: kbArticlesResult.status === 'fulfilled' ? kbArticlesResult.value : [],
@@ -215,6 +217,8 @@ export default function DashboardPage() {
       ? `${Math.max(1, Math.round(Number(data.overview.tiempo_promedio_seg) / 60))} min`
       : formatResponseTime(conversations);
     const opportunitiesValue = salesMetrics?.qualified_leads ?? opportunities;
+    const generalConversations = conversations.filter((item) => item.activeAiAgent === 'general').length;
+    const generalEscalated = conversations.filter((item) => item.activeAiAgent === 'general' && item.status === 'escalado').length;
 
     const maturity: DashboardMaturity =
       !onboarding?.initial_onboarding_completed || completedCoreTasks <= 1
@@ -404,6 +408,8 @@ export default function DashboardPage() {
       resolvedConversations,
       avgResponseTime,
       escalatedPct: overviewEscalated,
+      generalConversations,
+      generalEscalated,
       hasAnyData:
         conversations.length > 0 ||
         activeChannels > 0 ||
@@ -470,6 +476,8 @@ export default function DashboardPage() {
           opportunitiesDetected={derived.opportunities}
           avgResponseTime={derived.avgResponseTime}
           conversationsResolved={data.salesMetrics?.executions ?? derived.resolvedConversations}
+          generalConversations={derived.generalConversations}
+          generalEscalated={derived.generalEscalated}
         />
 
         <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">

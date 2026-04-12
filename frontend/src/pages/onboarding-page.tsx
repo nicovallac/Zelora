@@ -1,22 +1,44 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, ChevronLeft, ChevronRight, FileUp, Link2, Loader2, Rocket, SkipForward, Sparkles } from 'lucide-react';
+import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Loader2, SkipForward, Sparkles } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
-import type { OnboardingProfileApiItem, OnboardingProfilePayload, QuickKnowledgeFileItem } from '../services/api';
+import type { OnboardingProfileApiItem, OnboardingProfilePayload } from '../services/api';
 import { useNotification } from '../contexts/NotificationContext';
 
 type ActivationStep = 1 | 2 | 3;
 
-const STEPS: Array<{
-  id: ActivationStep;
-  title: string;
-  description: string;
-}> = [
+const STEPS: Array<{ id: ActivationStep; title: string; description: string }> = [
   { id: 1, title: 'Contexto', description: 'Qué vendes y a quién le vendes' },
-  { id: 2, title: 'Información', description: 'Ayuda opcional para responder mejor' },
+  { id: 2, title: 'Tu asistente', description: 'Personalidad y tono de respuesta' },
   { id: 3, title: 'Listo', description: 'Tu siguiente ruta dentro del producto' },
 ];
+
+const SELL_PLACEHOLDERS = [
+  'Ej: Ropa deportiva para mujeres que compran por Instagram',
+  'Ej: Servicios de contabilidad para pymes en Colombia',
+  'Ej: Suplementos deportivos al por mayor para gimnasios',
+  'Ej: Seguros de vida y salud para empleados de empresas',
+];
+
+const TO_PLACEHOLDERS = [
+  'Ej: Mujeres de 20-35 años que compran desde WhatsApp o Instagram',
+  'Ej: Dueños de negocios pequeños que necesitan llevar sus cuentas',
+  'Ej: Gerentes de gimnasios que compran al por mayor cada mes',
+  'Ej: Directores de RRHH que buscan beneficios para sus empleados',
+];
+
+function useCyclePlaceholder(items: string[], active: boolean, interval = 3000) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setIndex((i) => (i + 1) % items.length), interval);
+    return () => clearInterval(id);
+  }, [items.length, interval, active]);
+  return items[index];
+}
+
+type FormLevel = 'formal' | 'balanced' | 'casual';
 
 function emptyProfile(): OnboardingProfileApiItem {
   return {
@@ -30,7 +52,7 @@ function emptyProfile(): OnboardingProfileApiItem {
     payment_settings: {},
     what_you_sell: '',
     who_you_sell_to: '',
-    general_agent_name: 'General Agent',
+    general_agent_name: '',
     general_agent_profile: {
       agent_persona: '',
       mission_statement: '',
@@ -80,9 +102,7 @@ function emptyProfile(): OnboardingProfileApiItem {
       default_response_language: true,
       session_timeout_minutes: 480,
     },
-    notification_settings: {
-      items: [],
-    },
+    notification_settings: { items: [] },
     ai_preferences: {
       provider: 'gpt4',
       copilot_model: 'gpt-4o',
@@ -102,10 +122,7 @@ function emptyProfile(): OnboardingProfileApiItem {
         max_response_length: 'brief',
       },
     },
-    optimization_profile: {
-      status: 'not_started',
-      last_updated_at: null,
-    },
+    optimization_profile: { status: 'not_started', last_updated_at: null },
     onboarding_status: 'draft',
     completed_step: 1,
   };
@@ -117,32 +134,30 @@ function taskTone(status: string | undefined) {
   return 'border-[rgba(17,17,16,0.09)] bg-white/70 backdrop-blur-sm text-ink-700';
 }
 
-function normalizeUrl(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return '';
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
-  return `https://${trimmed}`;
-}
-
 export default function OnboardingPage() {
   const navigate = useNavigate();
   const { showError, showInfo, showSuccess } = useNotification();
   const [step, setStep] = useState<ActivationStep>(1);
   const [profile, setProfile] = useState<OnboardingProfileApiItem>(emptyProfile);
-  const [knowledgeLink, setKnowledgeLink] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
+
+  // Step 2 local state
+  const [agentName, setAgentName] = useState('');
+  const [formality, setFormality] = useState<FormLevel>('balanced');
+  const [greeting, setGreeting] = useState('');
 
   useEffect(() => {
     let cancelled = false;
-
     async function loadProfile() {
       try {
         const data = await api.getOnboardingProfile();
         if (cancelled) return;
         const nextProfile = { ...emptyProfile(), ...data };
         setProfile(nextProfile);
+        setAgentName(nextProfile.general_agent_name || '');
+        setFormality((nextProfile.brand_profile?.formality_level as FormLevel) || 'balanced');
+        setGreeting(nextProfile.general_agent_profile?.greeting_message || '');
         if (nextProfile.initial_onboarding_completed) {
           setStep(3);
         } else {
@@ -156,11 +171,8 @@ export default function OnboardingPage() {
         if (!cancelled) setLoading(false);
       }
     }
-
     void loadProfile();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [showError]);
 
   const completionPct = useMemo(() => Math.round((step / STEPS.length) * 100), [step]);
@@ -187,7 +199,7 @@ export default function OnboardingPage() {
   }
 
   function stepOneValid() {
-    return profile.what_you_sell.trim().length >= 6 && profile.who_you_sell_to.trim().length >= 6;
+    return (profile.what_you_sell || '').trim().length >= 6 && (profile.who_you_sell_to || '').trim().length >= 6;
   }
 
   async function handleNextFromStepOne() {
@@ -196,57 +208,32 @@ export default function OnboardingPage() {
       return;
     }
     const saved = await persistProfile({
-      what_you_sell: profile.what_you_sell.trim(),
-      who_you_sell_to: profile.who_you_sell_to.trim(),
+      what_you_sell: (profile.what_you_sell || '').trim(),
+      who_you_sell_to: (profile.who_you_sell_to || '').trim(),
       onboarding_status: 'in_progress',
       completed_step: 2,
     });
     if (saved) setStep(2);
   }
 
-  async function handleAddKnowledgeLink() {
-    const normalized = normalizeUrl(knowledgeLink);
-    if (!normalized) return;
-    if (profile.quick_knowledge_links.includes(normalized)) {
-      setKnowledgeLink('');
-      return;
-    }
-    const nextLinks = [...profile.quick_knowledge_links, normalized];
-    updateProfile({ quick_knowledge_links: nextLinks });
-    setKnowledgeLink('');
-    await persistProfile({ quick_knowledge_links: nextLinks, completed_step: 2 });
-  }
-
-  async function handleUploadFile(file: File | null) {
-    if (!file) return;
-    setUploading(true);
-    try {
-      const uploaded = await api.uploadOnboardingQuickKnowledgeFile(file);
-      setProfile((current) => ({
-        ...current,
-        quick_knowledge_files: [...current.quick_knowledge_files, uploaded],
-      }));
-      showSuccess('Archivo agregado', 'Ya puedes seguir. Luego podrás organizarlo mejor dentro del producto.');
-    } catch (error) {
-      showError('Activación', error instanceof Error ? error.message : 'No se pudo subir el archivo.');
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function handleContinueFromKnowledge() {
+  async function handleContinueFromBrand() {
     const saved = await persistProfile({
-      quick_knowledge_text: profile.quick_knowledge_text,
-      quick_knowledge_links: profile.quick_knowledge_links,
+      general_agent_name: agentName.trim() || 'Asistente',
+      brand_profile: {
+        ...(profile.brand_profile || {}),
+        formality_level: formality,
+      },
+      general_agent_profile: {
+        ...(profile.general_agent_profile || {}),
+        greeting_message: greeting.trim(),
+      },
       completed_step: 3,
     });
     if (saved) setStep(3);
   }
 
-  async function handleSkipKnowledge() {
-    const saved = await persistProfile({
-      completed_step: 3,
-    });
+  async function handleSkipBrand() {
+    const saved = await persistProfile({ completed_step: 3 });
     if (saved) setStep(3);
   }
 
@@ -257,14 +244,17 @@ export default function OnboardingPage() {
       completed_step: 3,
     });
     if (saved) {
-      showSuccess('Todo listo', 'Ya estás dentro. Estos siguientes pasos te ayudarán a activar valor más rápido.');
+      showSuccess('Todo listo', 'Ya estás dentro. Empieza a activar valor desde el dashboard.');
       navigate('/');
     }
   }
 
+  const sellPlaceholder = useCyclePlaceholder(SELL_PLACEHOLDERS, !profile.what_you_sell);
+  const toPlaceholder = useCyclePlaceholder(TO_PLACEHOLDERS, !profile.who_you_sell_to);
+
   if (loading) {
     return (
-      <div className="min-h-screen min-h-dvh flex items-center justify-center bg-[rgba(17,17,16,0.025)]">
+      <div className="flex min-h-screen items-center justify-center bg-[rgba(17,17,16,0.025)]">
         <div className="flex items-center gap-3 text-ink-600">
           <Loader2 size={18} className="animate-spin" />
           Preparando tu espacio...
@@ -280,23 +270,14 @@ export default function OnboardingPage() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.32 }}
-          className="rounded-[28px] border border-[rgba(17,17,16,0.09)] bg-white/70 backdrop-blur-sm p-5 shadow-card sm:p-8"
+          className="rounded-[28px] border border-[rgba(17,17,16,0.09)] bg-white/70 p-5 shadow-card backdrop-blur-sm sm:p-8"
         >
-          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-600">Activación inicial</p>
-              <h1 className="mt-2 text-2xl font-bold text-ink-900 sm:text-3xl">Entra rápido y empieza a ver valor</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-400">
-                Primero activamos tu cuenta. Después podrás ajustar cómo responde tu asistente con más detalle.
-              </p>
-            </div>
-            <button
-              onClick={() => void persistProfile({ onboarding_status: profile.onboarding_status })}
-              disabled={saving}
-              className="self-start rounded-xl border border-[rgba(17,17,16,0.09)] bg-white/70 backdrop-blur-sm px-4 py-2 text-sm font-semibold text-ink-700 transition hover:bg-[rgba(17,17,16,0.025)] disabled:opacity-60"
-            >
-              {saving ? 'Guardando...' : 'Guardar y seguir luego'}
-            </button>
+          <div className="mb-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-600">Tu espacio está activo</p>
+            <h1 className="mt-2 text-2xl font-bold text-ink-900 sm:text-3xl">Entra rápido y empieza a ver valor</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-400">
+              Primero activamos tu cuenta. Después podrás ajustar cómo responde tu asistente con más detalle.
+            </p>
           </div>
 
           <div className="mb-6 grid gap-2 sm:grid-cols-3">
@@ -327,19 +308,16 @@ export default function OnboardingPage() {
             <div className="h-2 rounded-full bg-brand-500 transition-all" style={{ width: `${completionPct}%` }} />
           </div>
 
+          {/* Step 1: Contexto */}
           {step === 1 && (
             <div className="space-y-5">
-              <div className="rounded-2xl border border-[rgba(17,17,16,0.09)] bg-[rgba(17,17,16,0.025)] p-4 text-sm text-ink-600">
-                Cuéntanos solo lo mínimo para ubicar al sistema. No necesitas configurar toda tu marca ahora.
-              </div>
-
               <label className="space-y-2">
                 <span className="text-sm font-semibold text-ink-800">¿Qué vendes?</span>
                 <textarea
                   value={profile.what_you_sell}
-                  onChange={(event) => updateProfile({ what_you_sell: event.target.value })}
+                  onChange={(e) => updateProfile({ what_you_sell: e.target.value })}
                   rows={3}
-                  placeholder="Ej: Vendemos ropa deportiva para mujeres que compran online"
+                  placeholder={sellPlaceholder}
                   className="w-full rounded-2xl border border-[rgba(17,17,16,0.09)] px-4 py-3 text-sm outline-none transition focus:border-brand-400"
                 />
               </label>
@@ -348,9 +326,9 @@ export default function OnboardingPage() {
                 <span className="text-sm font-semibold text-ink-800">¿A quién le vendes?</span>
                 <textarea
                   value={profile.who_you_sell_to}
-                  onChange={(event) => updateProfile({ who_you_sell_to: event.target.value })}
+                  onChange={(e) => updateProfile({ who_you_sell_to: e.target.value })}
                   rows={3}
-                  placeholder="Ej: Le vendemos a personas que buscan comprar rápido desde WhatsApp, web o Instagram"
+                  placeholder={toPlaceholder}
                   className="w-full rounded-2xl border border-[rgba(17,17,16,0.09)] px-4 py-3 text-sm outline-none transition focus:border-brand-400"
                 />
               </label>
@@ -369,80 +347,57 @@ export default function OnboardingPage() {
             </div>
           )}
 
+          {/* Step 2: Tu asistente */}
           {step === 2 && (
             <div className="space-y-5">
-              <div className="rounded-2xl border border-[rgba(17,17,16,0.09)] bg-[rgba(17,17,16,0.025)] p-4 text-sm text-ink-600">
-                Si quieres, agrega algo de información ahora para que tu asistente responda mejor desde el inicio.
-                También puedes omitirlo y seguir.
+              <div>
+                <h2 className="text-base font-bold text-ink-900">Dale personalidad a tu asistente</h2>
+                <p className="mt-1 text-sm text-ink-500">Opcional — puedes ajustarlo después con más detalle.</p>
               </div>
 
               <label className="space-y-2">
-                <span className="text-sm font-semibold text-ink-800">Pega texto útil</span>
-                <textarea
-                  value={profile.quick_knowledge_text}
-                  onChange={(event) => updateProfile({ quick_knowledge_text: event.target.value })}
-                  rows={5}
-                  placeholder="Ej: preguntas frecuentes, políticas, explicación de productos, entregas o devoluciones"
+                <span className="text-sm font-semibold text-ink-800">Nombre del asistente</span>
+                <input
+                  value={agentName}
+                  onChange={(e) => setAgentName(e.target.value)}
+                  placeholder="Ej: Sara, Max, Asistente Zelora"
                   className="w-full rounded-2xl border border-[rgba(17,17,16,0.09)] px-4 py-3 text-sm outline-none transition focus:border-brand-400"
                 />
               </label>
 
               <div className="space-y-2">
-                <span className="text-sm font-semibold text-ink-800">Pega un link</span>
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <input
-                    value={knowledgeLink}
-                    onChange={(event) => setKnowledgeLink(event.target.value)}
-                    placeholder="https://tu-tienda.com/politicas"
-                    className="flex-1 rounded-2xl border border-[rgba(17,17,16,0.09)] px-4 py-3 text-sm outline-none transition focus:border-brand-400"
-                  />
-                  <button
-                    onClick={() => void handleAddKnowledgeLink()}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[rgba(17,17,16,0.09)] px-4 py-3 text-sm font-semibold text-ink-700 transition hover:bg-[rgba(17,17,16,0.025)]"
-                  >
-                    <Link2 size={16} />
-                    Agregar link
-                  </button>
+                <span className="text-sm font-semibold text-ink-800">Tono de comunicación</span>
+                <div className="flex gap-2">
+                  {(['formal', 'balanced', 'casual'] as FormLevel[]).map((level) => {
+                    const labels: Record<FormLevel, string> = { formal: 'Formal', balanced: 'Balanceado', casual: 'Cercano' };
+                    return (
+                      <button
+                        key={level}
+                        type="button"
+                        onClick={() => setFormality(level)}
+                        className={`flex-1 rounded-xl border py-2.5 text-sm font-semibold transition ${
+                          formality === level
+                            ? 'border-brand-400 bg-brand-50 text-brand-700'
+                            : 'border-[rgba(17,17,16,0.09)] bg-white/70 text-ink-600 hover:border-[rgba(17,17,16,0.16)]'
+                        }`}
+                      >
+                        {labels[level]}
+                      </button>
+                    );
+                  })}
                 </div>
-                {profile.quick_knowledge_links.length > 0 ? (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {profile.quick_knowledge_links.map((item) => (
-                      <span key={item} className="rounded-full border border-[rgba(17,17,16,0.09)] bg-white/70 backdrop-blur-sm px-3 py-1 text-xs text-ink-600">
-                        {item}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
               </div>
 
-              <div className="space-y-2">
-                <span className="text-sm font-semibold text-ink-800">Sube un archivo</span>
-                <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-[rgba(17,17,16,0.12)] bg-[rgba(17,17,16,0.025)] px-4 py-6 text-center transition hover:border-[rgba(17,17,16,0.18)] hover:bg-white">
-                  <FileUp size={18} className="text-ink-400" />
-                  <p className="mt-2 text-sm font-semibold text-ink-700">
-                    {uploading ? 'Subiendo archivo...' : 'PDF, documento o archivo útil'}
-                  </p>
-                  <p className="mt-1 text-xs text-ink-400">Lo guardamos para que luego puedas usarlo dentro del producto.</p>
-                  <input
-                    type="file"
-                    className="hidden"
-                    onChange={(event) => void handleUploadFile(event.target.files?.[0] ?? null)}
-                  />
-                </label>
-                {profile.quick_knowledge_files.length > 0 ? (
-                  <div className="space-y-2">
-                    {profile.quick_knowledge_files.map((file: QuickKnowledgeFileItem) => (
-                      <div key={file.id} className="flex items-center justify-between rounded-2xl border border-[rgba(17,17,16,0.09)] bg-white/70 backdrop-blur-sm px-4 py-3 text-sm">
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-ink-900">{file.filename}</p>
-                          <p className="text-xs text-ink-400">{Math.max(1, Math.round(file.file_size / 1024))} KB</p>
-                        </div>
-                        <span className="text-xs font-semibold text-ink-400">Cargado</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
+              <label className="space-y-2">
+                <span className="text-sm font-semibold text-ink-800">Mensaje de bienvenida</span>
+                <textarea
+                  value={greeting}
+                  onChange={(e) => setGreeting(e.target.value)}
+                  rows={3}
+                  placeholder="Ej: Hola, soy Sara. Estoy aquí para ayudarte a encontrar lo que necesitas."
+                  className="w-full rounded-2xl border border-[rgba(17,17,16,0.09)] px-4 py-3 text-sm outline-none transition focus:border-brand-400"
+                />
+              </label>
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <button
@@ -454,15 +409,15 @@ export default function OnboardingPage() {
                 </button>
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <button
-                    onClick={() => void handleSkipKnowledge()}
+                    onClick={() => void handleSkipBrand()}
                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[rgba(17,17,16,0.09)] px-4 py-3 text-sm font-semibold text-ink-700 transition hover:bg-[rgba(17,17,16,0.025)]"
                   >
                     <SkipForward size={16} />
                     Omitir por ahora
                   </button>
                   <button
-                    onClick={() => void handleContinueFromKnowledge()}
-                    disabled={saving || uploading}
+                    onClick={() => void handleContinueFromBrand()}
+                    disabled={saving}
                     className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
                   >
                     Continuar
@@ -473,12 +428,13 @@ export default function OnboardingPage() {
             </div>
           )}
 
+          {/* Step 3: Listo */}
           {step === 3 && (
             <div className="space-y-6">
               <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-6">
                 <div className="flex items-start gap-3">
                   <div className="rounded-2xl bg-emerald-600 p-2 text-white">
-                    <Rocket size={18} />
+                    <Sparkles size={18} />
                   </div>
                   <div>
                     <h2 className="text-lg font-bold text-ink-900">Tu cuenta ya está lista</h2>
@@ -525,7 +481,10 @@ export default function OnboardingPage() {
                           <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide">
                             {item.status === 'completed' ? 'Completado' : item.status === 'in_progress' ? 'En progreso' : 'Pendiente'}
                           </span>
-                          <Link to={item.href} className="rounded-xl border border-[rgba(17,17,16,0.09)] bg-white/70 backdrop-blur-sm px-3 py-2 text-xs font-semibold text-ink-700 transition hover:bg-[rgba(17,17,16,0.025)]">
+                          <Link
+                            to={item.href}
+                            className="rounded-xl border border-[rgba(17,17,16,0.09)] bg-white/70 px-3 py-2 text-xs font-semibold text-ink-700 backdrop-blur-sm transition hover:bg-[rgba(17,17,16,0.025)]"
+                          >
                             {item.actionLabel}
                           </Link>
                         </div>
@@ -533,13 +492,6 @@ export default function OnboardingPage() {
                     </div>
                   ))}
                 </div>
-              </div>
-
-              <div className="rounded-2xl border border-[rgba(17,17,16,0.09)] bg-[rgba(17,17,16,0.025)] p-4">
-                <p className="text-sm font-semibold text-ink-900">Más adelante podrás ajustar cómo responde tu asistente</p>
-                <p className="mt-1 text-sm text-ink-600">
-                  Tono, estilo de cierre, reglas y comportamiento avanzado quedan fuera de esta activación inicial para no frenarte ahora.
-                </p>
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -553,28 +505,15 @@ export default function OnboardingPage() {
                 <button
                   onClick={() => void handleFinish()}
                   disabled={saving}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
+                  className="group inline-flex items-center justify-center gap-2 rounded-full bg-brand-500 px-7 py-3.5 text-sm font-bold text-white shadow-card transition hover:bg-brand-600 disabled:opacity-60"
                 >
-                  Entrar al producto
-                  <ChevronRight size={16} />
+                  <Sparkles size={16} className="transition group-hover:scale-110" />
+                  Ir a mi espacio
+                  <ArrowRight size={16} className="transition group-hover:translate-x-0.5" />
                 </button>
               </div>
             </div>
           )}
-
-          <div className="mt-8 rounded-2xl border border-[rgba(17,17,16,0.09)] bg-[rgba(17,17,16,0.025)] p-4">
-            <div className="flex items-start gap-3">
-              <div className="rounded-xl bg-brand-100 p-2 text-brand-700">
-                <Sparkles size={16} />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-ink-900">La regla principal aquí es simple</p>
-                <p className="mt-1 text-sm text-ink-600">
-                  Primero activar. Después calibrar. No necesitas configurar todo para entrar.
-                </p>
-              </div>
-            </div>
-          </div>
         </motion.div>
       </div>
     </div>

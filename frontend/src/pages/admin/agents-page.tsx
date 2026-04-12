@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Bot, BookOpen, ChevronRight, Loader2, Megaphone,
-  Pencil, Plus, Settings2, ShoppingCart, Sparkles, ToggleLeft, ToggleRight, X, Zap,
+  Bot, ChevronRight, Loader2, Megaphone,
+  Pencil, Plus, Settings2, Shield, ShoppingCart, Sparkles, ToggleLeft, ToggleRight, X,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import type { AgentAdmin, CreateAgentPayload, OnboardingProfileApiItem, SalesAgentMetricsApiItem } from '../../services/api';
@@ -43,6 +43,12 @@ function stringifyTokens(values?: string[]) {
   return (values || []).join(', ');
 }
 
+function normalizeAutonomyLevel(value?: string | null): SalesAgentUiSettings['autonomyLevel'] {
+  if (value === 'asistido' || value === 'semi_autonomo' || value === 'full') return value;
+  if (value === 'autonomo') return 'full';
+  return 'semi_autonomo';
+}
+
 function validate(form: AgentFormState, isEdit: boolean): string | null {
   if (!form.nombre.trim()) return 'El nombre es obligatorio';
   if (!form.email.trim()) return 'El correo es obligatorio';
@@ -58,7 +64,8 @@ function validate(form: AgentFormState, isEdit: boolean): string | null {
 // ── types ─────────────────────────────────────────────────────────────────────
 
 type AgentsTab = 'ia' | 'humanos';
-type ConfigTab = 'identidad' | 'marca' | 'playbook' | 'buyer';
+type ConfigTab = 'identidad' | 'ejecucion' | 'estrategia' | 'guardrails' | 'marca' | 'playbook' | 'buyer';
+type GeneralConfigTab = 'identidad' | 'alcance';
 type AiAgentKind = 'general' | 'sales';
 
 interface AgentFormState {
@@ -68,9 +75,9 @@ const EMPTY_FORM: AgentFormState = { nombre: '', email: '', password: '', confir
 
 interface SalesAgentUiSettings {
   enabled: boolean;
-  autonomyLevel: 'asistido' | 'semi_autonomo' | 'autonomo';
+  autonomyLevel: 'asistido' | 'semi_autonomo' | 'full';
   followupMode: 'apagado' | 'suave' | 'activo';
-  maxFollowups: '0' | '1' | '2';
+  maxFollowups: '0' | '1' | '2' | '3';
   recommendationDepth: '1' | '2' | '3';
   handoffMode: 'temprano' | 'balanceado' | 'estricto';
   maxResponseLength: 'brief' | 'standard' | 'detailed';
@@ -103,7 +110,8 @@ interface SalesAgentProfileState {
   missionStatement: string;
   responseLanguage: 'auto' | 'es' | 'en';
   greetingMessage: string;
-  // Marca y tono
+  competitorResponse: string;
+  // Voz comercial
   toneOfVoice: string;
   formalityLevel: string;
   brandPersonality: string;
@@ -115,29 +123,31 @@ interface SalesAgentProfileState {
   urgencyStyle: string;
   customerStyleNotes: string;
   // Playbook
+  openingStyle: string;
   recommendationStyle: string;
   objectionStyle: string;
   closingStyle: string;
   followUpStyle: string;
   upsellStyle: string;
   escalateConditions: string[];
-  competitorResponse: string;
   // Buyer model
   idealBuyers: string[];
   purchaseSignals: string[];
   lowIntentSignals: string[];
   bulkBuyerSignals: string[];
+  commonObjections: string[];
 }
 
 const DEFAULT_PROFILE: SalesAgentProfileState = {
   name: 'Sales Agent', agentPersona: '',
   missionStatement: '', responseLanguage: 'auto', greetingMessage: '',
+  competitorResponse: '',
   toneOfVoice: '', formalityLevel: 'balanced', brandPersonality: '',
   valueProposition: '', keyDifferentiators: [], recommendedPhrases: [], avoidPhrases: [],
   preferredClosingStyle: '', urgencyStyle: 'soft', customerStyleNotes: '',
-  recommendationStyle: '', objectionStyle: '', closingStyle: '',
-  followUpStyle: '', upsellStyle: '', escalateConditions: [], competitorResponse: '',
-  idealBuyers: [], purchaseSignals: [], lowIntentSignals: [], bulkBuyerSignals: [],
+  openingStyle: '', recommendationStyle: '', objectionStyle: '', closingStyle: '',
+  followUpStyle: '', upsellStyle: '', escalateConditions: [],
+  idealBuyers: [], purchaseSignals: [], lowIntentSignals: [], bulkBuyerSignals: [], commonObjections: [],
 };
 
 const DEFAULT_GENERAL_PROFILE: GeneralAgentProfileState = {
@@ -170,16 +180,18 @@ function mapGeneralProfile(profile: OnboardingProfileApiItem): GeneralAgentProfi
 }
 
 function mapProfile(profile: OnboardingProfileApiItem): SalesAgentProfileState {
+  const sales = profile.sales_agent || {};
   const ap = profile.sales_agent_profile || {};
-  const brand = ap.brand_profile || {};
-  const playbook = ap.sales_playbook || {};
-  const buyer = ap.buyer_model || {};
+  const brand = profile.org_profile?.brand || ap.brand_profile || profile.brand_profile || {};
+  const playbook = sales.playbook || ap.sales_playbook || profile.sales_playbook || {};
+  const buyer = sales.buyer_model || ap.buyer_model || profile.buyer_model || {};
   return {
-    name: profile.sales_agent_name || 'Sales Agent',
-    agentPersona: ap.agent_persona || '',
-    missionStatement: ap.mission_statement || '',
-    responseLanguage: (ap.response_language as SalesAgentProfileState['responseLanguage']) || 'auto',
-    greetingMessage: ap.greeting_message || '',
+    name: sales.name || profile.sales_agent_name || 'Sales Agent',
+    agentPersona: sales.persona || ap.agent_persona || '',
+    missionStatement: sales.mission_statement || ap.mission_statement || '',
+    responseLanguage: (sales.response_language as SalesAgentProfileState['responseLanguage']) || (ap.response_language as SalesAgentProfileState['responseLanguage']) || 'auto',
+    greetingMessage: sales.greeting_message || ap.greeting_message || '',
+    competitorResponse: sales.competitor_response || ap.competitor_response || playbook.competitor_response || '',
     toneOfVoice: brand.tone_of_voice || '',
     formalityLevel: brand.formality_level || 'balanced',
     brandPersonality: brand.brand_personality || '',
@@ -190,17 +202,18 @@ function mapProfile(profile: OnboardingProfileApiItem): SalesAgentProfileState {
     preferredClosingStyle: brand.preferred_closing_style || '',
     urgencyStyle: brand.urgency_style || 'soft',
     customerStyleNotes: brand.customer_style_notes || '',
+    openingStyle: playbook.opening_style || '',
     recommendationStyle: playbook.recommendation_style || '',
     objectionStyle: playbook.objection_style || '',
     closingStyle: playbook.closing_style || '',
     followUpStyle: playbook.follow_up_style || '',
     upsellStyle: playbook.upsell_style || '',
     escalateConditions: playbook.escalate_conditions || [],
-    competitorResponse: ap.competitor_response || playbook.competitor_response || '',
     idealBuyers: buyer.ideal_buyers || [],
     purchaseSignals: buyer.purchase_signals || [],
     lowIntentSignals: buyer.low_intent_signals || [],
     bulkBuyerSignals: buyer.bulk_buyer_signals || [],
+    commonObjections: buyer.common_objections || [],
   };
 }
 
@@ -275,18 +288,8 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-ink-500">{children}</p>;
 }
 
-function InfoChip({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'violet' | 'emerald' }) {
-  const toneClass =
-    tone === 'violet'
-      ? 'border-violet-200/70 bg-violet-50/75 text-violet-700'
-      : tone === 'emerald'
-        ? 'border-emerald-200/70 bg-emerald-50/75 text-emerald-700'
-        : 'border-[rgba(17,17,16,0.08)] bg-white/80 text-ink-600';
-  return (
-    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold ${toneClass}`}>
-      {children}
-    </span>
-  );
+function SectionCard({ children }: { children: React.ReactNode }) {
+  return <div className="rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/75 p-4">{children}</div>;
 }
 
 
@@ -322,9 +325,14 @@ export function SharedBrandContextCard({ whatYouSell, whoYouSellTo }: { whatYouS
 
 const CONFIG_TABS: { id: ConfigTab; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
   { id: 'identidad', label: 'Identidad', icon: Bot },
-  { id: 'marca',     label: 'Marca y Tono', icon: Sparkles },
-  { id: 'playbook',  label: 'Playbook', icon: BookOpen },
-  { id: 'buyer',     label: 'Audiencia', icon: Zap },
+  { id: 'ejecucion', label: 'Ejecucion', icon: Settings2 },
+  { id: 'estrategia', label: 'Estrategia', icon: Sparkles },
+  { id: 'guardrails', label: 'Guardrails', icon: Shield },
+];
+
+const GENERAL_CONFIG_TABS: { id: GeneralConfigTab; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
+  { id: 'identidad', label: 'Identidad', icon: Bot },
+  { id: 'alcance', label: 'Alcance', icon: Shield },
 ];
 
 function GeneralConfigPanel({
@@ -337,22 +345,6 @@ function GeneralConfigPanel({
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-4">
       <div className="space-y-5">
-        <div className="rounded-3xl border border-violet-200/70 bg-violet-50/65 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-700">General Agent</p>
-              <p className="mt-1 max-w-[680px] text-[12px] leading-relaxed text-violet-700">
-                Es el asistente base de la marca. Responde dudas, mantiene el scope, aclara la intencion del cliente y decide si debe pasar a Sales o a un humano.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              <InfoChip tone="violet">Base</InfoChip>
-              <InfoChip tone="violet">Primer contacto</InfoChip>
-              <InfoChip tone="violet">KB + marca</InfoChip>
-            </div>
-          </div>
-        </div>
-
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-4">
             <div className="rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/75 p-4">
@@ -425,6 +417,111 @@ function GeneralConfigPanel({
   );
 }
 
+void GeneralConfigPanel;
+
+function UnifiedGeneralConfigPanel({
+  profile,
+  set,
+}: {
+  profile: GeneralAgentProfileState;
+  set: <K extends keyof GeneralAgentProfileState>(k: K, v: GeneralAgentProfileState[K]) => void;
+}) {
+  const [tab, setTab] = useState<GeneralConfigTab>('identidad');
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex gap-0.5 overflow-x-auto border-b border-[rgba(17,17,16,0.07)] pb-0 pt-1 px-1">
+        {GENERAL_CONFIG_TABS.map((t) => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex flex-shrink-0 items-center gap-1.5 rounded-t-xl px-3 py-2 text-[12px] font-semibold transition ${
+                tab === t.id
+                  ? 'border border-b-white border-[rgba(17,17,16,0.09)] bg-white text-ink-900 -mb-px'
+                  : 'text-ink-400 hover:text-ink-700'
+              }`}
+            >
+              <Icon size={12} />
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {tab === 'identidad' && (
+          <SectionCard>
+            <SectionTitle>Identidad</SectionTitle>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <InputField label="Nombre del agente" hint="Nombre visible como asistente principal" value={profile.name} onChange={(v) => set('name', v)} placeholder="Ej: Asistente general" />
+              <InputField label="Persona del agente" hint="Como debe sonar al orientar" value={profile.agentPersona} onChange={(v) => set('agentPersona', v)} placeholder="Ej: amable, clara y util" />
+              <div className="sm:col-span-2">
+                <InputField label="Mision" hint="Que debe tener presente al responder" value={profile.missionStatement} onChange={(v) => set('missionStatement', v)} rows={2} placeholder="Proposito general de la marca u organizacion" />
+              </div>
+              <div className="sm:col-span-2">
+                <InputField label="Mensaje inicial" hint="Primer mensaje conversacional cuando este agente abre el chat" value={profile.greetingMessage} onChange={(v) => set('greetingMessage', v)} placeholder="Ej: Hola, soy el asistente general de [Marca]. ¿En que puedo ayudarte?" />
+              </div>
+              <SelectField
+                label="Idioma de respuesta"
+                hint="Auto detecta el idioma del cliente"
+                value={profile.responseLanguage}
+                onChange={(v) => set('responseLanguage', v as GeneralAgentProfileState['responseLanguage'])}
+                options={[{ value: 'auto', label: 'Auto (detecta idioma del cliente)' }, { value: 'es', label: 'Siempre espanol' }, { value: 'en', label: 'Always English' }]}
+              />
+            </div>
+          </SectionCard>
+        )}
+
+        {tab === 'alcance' && (
+          <SectionCard>
+            <SectionTitle>Alcance</SectionTitle>
+            <div className="grid gap-3">
+              <InputField
+                label="Notas de alcance"
+                hint="Contexto corto de lo que si debe cubrir"
+                value={profile.scopeNotes}
+                onChange={(v) => set('scopeNotes', v)}
+                rows={4}
+                placeholder="Ej: responder solo sobre la marca, servicios, politicas basicas, horarios, requisitos y FAQs."
+              />
+              <TokenField
+                label="Puede responder sobre"
+                hint="Temas permitidos y esperados para este agente"
+                value={profile.allowedTopics}
+                onChange={(v) => set('allowedTopics', v)}
+                placeholder="Ej: servicios, horarios, requisitos, FAQs, politicas basicas"
+              />
+              <TokenField
+                label="Debe bloquear cuando"
+                hint="Temas fuera de alcance o prohibidos"
+                value={profile.blockedTopics}
+                onChange={(v) => set('blockedTopics', v)}
+                placeholder="Ej: politica nacional, clima, soporte tecnico externo, otras marcas"
+              />
+              <TokenField
+                label="Debe pasar a Sales cuando"
+                hint="Senales que indican intencion comercial real"
+                value={profile.handoffToSalesWhen}
+                onChange={(v) => set('handoffToSalesWhen', v)}
+                placeholder="Ej: pregunta por precio, quiere comprar, compara opciones, pide disponibilidad"
+              />
+              <TokenField
+                label="Debe escalar a humano cuando"
+                hint="Casos sensibles o que necesitan revision humana"
+                value={profile.handoffToHumanWhen}
+                onChange={(v) => set('handoffToHumanWhen', v)}
+                placeholder="Ej: quejas, casos especiales, falta de contexto, excepciones operativas"
+              />
+            </div>
+          </SectionCard>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ConfigPanel({
   profile,
   set,
@@ -460,6 +557,8 @@ function ConfigPanel({
       {/* Tab content */}
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {tab === 'identidad' && (
+          <SectionCard>
+          <SectionTitle>Identidad</SectionTitle>
           <div className="grid gap-3 sm:grid-cols-2">
             <InputField label="Nombre del agente" hint="Cómo se llama tu asistente IA" value={profile.name} onChange={(v) => set('name', v)} placeholder="Ej: Nombre del asistente virtual" />
             <InputField label="Persona del agente" hint="Carácter y estilo — da vida al bot" value={profile.agentPersona} onChange={(v) => set('agentPersona', v)} placeholder="Describe el carácter: formal, cercano, experto, empático…" />
@@ -477,9 +576,12 @@ function ConfigPanel({
               options={[{ value: 'auto', label: 'Auto (detecta idioma del cliente)' }, { value: 'es', label: 'Siempre español' }, { value: 'en', label: 'Always English' }]}
             />
           </div>
+          </SectionCard>
         )}
 
         {tab === 'marca' && (
+          <SectionCard>
+          <SectionTitle>Marca y tono</SectionTitle>
           <div className="grid gap-3 sm:grid-cols-2">
             {/* Learned-from-chats banner — only show if data is populated */}
             {(profile.toneOfVoice || profile.brandPersonality || profile.recommendedPhrases.length > 0) && (
@@ -544,9 +646,11 @@ function ConfigPanel({
               />
             </div>
           </div>
+          </SectionCard>
         )}
 
         {tab === 'playbook' && (
+          <SectionCard>
           <div className="grid gap-3 sm:grid-cols-2">
             <SectionTitle>Cómo responde el agente en cada etapa</SectionTitle>
             <div />
@@ -568,9 +672,12 @@ function ConfigPanel({
               <TokenField label="Condiciones de escalado" hint="Cuándo el agente debe pasar a un humano" value={profile.escalateConditions} onChange={(v) => set('escalateConditions', v)} placeholder="Separados por coma: casos que requieren revisión humana" />
             </div>
           </div>
+          </SectionCard>
         )}
 
         {tab === 'buyer' && (
+          <SectionCard>
+          <SectionTitle>Audiencia</SectionTitle>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2 rounded-2xl border border-[rgba(17,17,16,0.07)] bg-[rgba(17,17,16,0.02)] px-3 py-2.5">
               <p className="text-[11px] font-bold text-ink-700">Perfil de audiencia — señales de intención</p>
@@ -587,7 +694,307 @@ function ConfigPanel({
               <TokenField label="Señales de consulta empresarial / B2B" hint="Clientes institucionales o en volumen" value={profile.bulkBuyerSignals} onChange={(v) => set('bulkBuyerSignals', v)} placeholder="Separados por coma: frases que indican una consulta empresarial" />
             </div>
           </div>
+          </SectionCard>
         )}
+      </div>
+    </div>
+  );
+}
+
+void ConfigPanel;
+
+function ConfigPanelV2({
+  profile,
+  set,
+  settings,
+  setSettings,
+  salesMetrics,
+}: {
+  profile: SalesAgentProfileState;
+  set: <K extends keyof SalesAgentProfileState>(k: K, v: SalesAgentProfileState[K]) => void;
+  settings: SalesAgentUiSettings;
+  setSettings: (value: SalesAgentUiSettings | ((prev: SalesAgentUiSettings) => SalesAgentUiSettings)) => void;
+  salesMetrics: SalesAgentMetricsApiItem | null;
+}) {
+  const [tab, setTab] = useState<ConfigTab>('identidad');
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex gap-0.5 overflow-x-auto border-b border-[rgba(17,17,16,0.07)] pb-0 pt-1 px-1">
+        {CONFIG_TABS.map((t) => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex flex-shrink-0 items-center gap-1.5 rounded-t-xl px-3 py-2 text-[12px] font-semibold transition ${
+                tab === t.id
+                  ? 'border border-b-white border-[rgba(17,17,16,0.09)] bg-white text-ink-900 -mb-px'
+                  : 'text-ink-400 hover:text-ink-700'
+              }`}
+            >
+              <Icon size={12} />
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {tab === 'identidad' && (
+          <SectionCard>
+            <SectionTitle>Identidad</SectionTitle>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <InputField label="Nombre del agente" hint="Como se presenta ante el cliente" value={profile.name} onChange={(v) => set('name', v)} placeholder="Ej: Asesor virtual de ventas" />
+              <InputField label="Persona del agente" hint="Caracter y estilo general del vendedor" value={profile.agentPersona} onChange={(v) => set('agentPersona', v)} placeholder="Ej: consultivo, agil y persuasivo" />
+              <div className="sm:col-span-2">
+                <InputField label="Mision" hint="Objetivo principal del agente en la conversacion" value={profile.missionStatement} onChange={(v) => set('missionStatement', v)} rows={2} placeholder="Ej: ayudar a elegir la mejor opcion y mover la conversacion a cierre." />
+              </div>
+              <div className="sm:col-span-2">
+                <InputField label="Mensaje de bienvenida" hint="Primer mensaje conversacional real del agente" value={profile.greetingMessage} onChange={(v) => set('greetingMessage', v)} placeholder="Ej: Hola, soy el asesor virtual de [Marca]. Te ayudo a encontrar la mejor opcion." />
+              </div>
+              <SelectField
+                label="Idioma de respuesta"
+                hint="Auto detecta el idioma del cliente"
+                value={profile.responseLanguage}
+                onChange={(v) => set('responseLanguage', v as SalesAgentProfileState['responseLanguage'])}
+                options={[{ value: 'auto', label: 'Auto (detecta idioma del cliente)' }, { value: 'es', label: 'Siempre espanol' }, { value: 'en', label: 'Always English' }]}
+              />
+            </div>
+          </SectionCard>
+        )}
+
+        {tab === 'ejecucion' && (
+          <SectionCard>
+            <div className="space-y-4">
+              <div>
+                <SectionTitle>Operacion del agente</SectionTitle>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {[
+                    { key: 'enabled', label: 'Estado', opts: [{ value: 'on', label: 'Activo' }, { value: 'off', label: 'Pausado' }] },
+                    { key: 'autonomyLevel', label: 'Autonomia', opts: [{ value: 'asistido', label: 'Asistido' }, { value: 'semi_autonomo', label: 'Semi autonomo' }, { value: 'full', label: 'Autonomo' }] },
+                    { key: 'followupMode', label: 'Follow-up', opts: [{ value: 'apagado', label: 'Apagado' }, { value: 'suave', label: 'Suave' }, { value: 'activo', label: 'Activo' }] },
+                    { key: 'maxFollowups', label: 'Max follow-ups', opts: [{ value: '0', label: '0' }, { value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }] },
+                    { key: 'recommendationDepth', label: 'Recomendaciones', opts: [{ value: '1', label: '1 opcion' }, { value: '2', label: '2 opciones' }, { value: '3', label: '3 opciones' }] },
+                    { key: 'handoffMode', label: 'Escalado', opts: [{ value: 'temprano', label: 'Temprano' }, { value: 'balanceado', label: 'Balanceado' }, { value: 'estricto', label: 'Estricto' }] },
+                    { key: 'maxResponseLength', label: 'Largo de respuesta', opts: [{ value: 'brief', label: 'Breve' }, { value: 'standard', label: 'Estandar' }, { value: 'detailed', label: 'Detallado' }] },
+                  ].map(({ key, label, opts }) => (
+                    <label key={key} className="rounded-2xl border border-[rgba(17,17,16,0.07)] bg-[rgba(17,17,16,0.02)] px-3 py-2.5">
+                      <span className="block text-[10px] font-semibold uppercase tracking-[0.10em] text-ink-400">{label}</span>
+                      <select
+                        value={key === 'enabled' ? (settings.enabled ? 'on' : 'off') : settings[key as keyof SalesAgentUiSettings] as string}
+                        onChange={(e) => {
+                          if (key === 'enabled') setSettings((s) => ({ ...s, enabled: e.target.value === 'on' }));
+                          else setSettings((s) => ({ ...s, [key]: e.target.value }));
+                        }}
+                        className="mt-1 w-full bg-transparent text-[13px] font-medium text-ink-800 outline-none"
+                      >
+                        {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-brand-200/60 bg-brand-50/45 p-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brand-700">Politicas y operacion del negocio</p>
+                <p className="mt-1 text-[12px] leading-relaxed text-brand-700">
+                  Envios, devoluciones, descuentos, tiempos de entrega, restricciones y promesas prohibidas ya no se editan aqui. El Sales Agent las toma desde Knowledge Base.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <Link to="/knowledge-base" className="rounded-full border border-brand-200/80 bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-brand-700 transition hover:bg-white">
+                    Abrir KB
+                  </Link>
+                  <span className="rounded-full border border-brand-200/80 bg-white/70 px-2.5 py-1 text-[10px] font-medium text-brand-700">Template: Politica de envios</span>
+                  <span className="rounded-full border border-brand-200/80 bg-white/70 px-2.5 py-1 text-[10px] font-medium text-brand-700">Template: Cambios y devoluciones</span>
+                  <span className="rounded-full border border-brand-200/80 bg-white/70 px-2.5 py-1 text-[10px] font-medium text-brand-700">Template: Promos y descuentos</span>
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+        )}
+
+        {tab === 'estrategia' && (
+          <SectionCard>
+            <div className="space-y-4">
+              <div>
+                <SectionTitle>Voz comercial</SectionTitle>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(profile.toneOfVoice || profile.brandPersonality || profile.recommendedPhrases.length > 0) && (
+                    <div className="sm:col-span-2 rounded-2xl border border-violet-200/70 bg-violet-50/60 px-3 py-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles size={11} className="text-violet-600 flex-shrink-0" />
+                        <p className="text-[11px] font-bold text-violet-700">Aprendido de conversaciones reales</p>
+                      </div>
+                      <p className="mt-1 text-[11px] leading-relaxed text-violet-600">
+                        Esta capa define como vende el agente: tono, propuesta de valor, frases y forma de cerrar.
+                      </p>
+                    </div>
+                  )}
+                  <InputField label="Tono de voz" hint="Como debe sonar al vender" value={profile.toneOfVoice} onChange={(v) => set('toneOfVoice', v)} placeholder="Ej: cercano, seguro y resolutivo" />
+                  <SelectField label="Nivel de formalidad" value={profile.formalityLevel} onChange={(v) => set('formalityLevel', v)}
+                    options={[
+                      { value: 'relajado', label: 'Relajado' },
+                      { value: 'balanced', label: 'Balanceado' },
+                      { value: 'formal', label: 'Formal' },
+                    ]}
+                  />
+                  <div className="sm:col-span-2">
+                    <InputField label="Personalidad de marca" hint="Actitud que debe transmitir" value={profile.brandPersonality} onChange={(v) => set('brandPersonality', v)} rows={2} placeholder="Ej: experta, agil y muy clara al recomendar." />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <InputField label="Propuesta de valor" hint="Promesa comercial que debe repetir y defender" value={profile.valueProposition} onChange={(v) => set('valueProposition', v)} rows={2} placeholder="Ej: asesoria clara, opciones concretas y acompanamiento hasta el cierre." />
+                  </div>
+                  <SelectField label="Estilo de cierre preferido" value={profile.preferredClosingStyle} onChange={(v) => set('preferredClosingStyle', v)}
+                    options={[
+                      { value: '', label: 'Sin definir' },
+                      { value: 'directo', label: 'Directo' },
+                      { value: 'consultivo', label: 'Consultivo' },
+                      { value: 'suave', label: 'Suave' },
+                    ]}
+                  />
+                  <SelectField label="Nivel de urgencia" hint="Cuanta presion comercial puede ejercer" value={profile.urgencyStyle} onChange={(v) => set('urgencyStyle', v)}
+                    options={[
+                      { value: 'soft', label: 'Suave' },
+                      { value: 'moderate', label: 'Moderada' },
+                      { value: 'high', label: 'Alta' },
+                    ]}
+                  />
+                  <div className="sm:col-span-2">
+                    <TokenField label="Diferenciadores clave" hint="Ventajas que debe reforzar con frecuencia" value={profile.keyDifferentiators} onChange={(v) => set('keyDifferentiators', v)} placeholder="Separados por comas" />
+                  </div>
+                  <TokenField label="Frases recomendadas" hint="Expresiones que si puede usar" value={profile.recommendedPhrases} onChange={(v) => set('recommendedPhrases', v)} placeholder="Separadas por comas" />
+                  <TokenField label="Frases a evitar" hint="Expresiones que no encajan con la marca" value={profile.avoidPhrases} onChange={(v) => set('avoidPhrases', v)} placeholder="Separadas por comas" />
+                  <div className="sm:col-span-2">
+                    <InputField label="Notas sobre como habla el cliente" hint="Lo aprendido del lenguaje real de los usuarios" value={profile.customerStyleNotes} onChange={(v) => set('customerStyleNotes', v)} rows={3} placeholder="Ej: comparan rapido, preguntan por precio y valoran respuestas cortas." />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <SectionTitle>Playbook de venta</SectionTitle>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <InputField label="Apertura" hint="Como debe arrancar una conversacion comercial" value={profile.openingStyle} onChange={(v) => set('openingStyle', v)} rows={2} placeholder="Ej: primero entender necesidad y luego proponer." />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <InputField label="Recomendacion" hint="Como presenta y justifica opciones" value={profile.recommendationStyle} onChange={(v) => set('recommendationStyle', v)} rows={2} placeholder="Ej: mostrar 1 o 2 opciones y explicar por que encajan." />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <InputField label="Manejo de objeciones" hint="Como responder ante dudas, precio o comparaciones" value={profile.objectionStyle} onChange={(v) => set('objectionStyle', v)} rows={2} placeholder="Ej: validar, responder con datos y cerrar con pregunta." />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <InputField label="Cierre" hint="Como empuja a la accion" value={profile.closingStyle} onChange={(v) => set('closingStyle', v)} rows={2} placeholder="Ej: confirmar interes, resumir valor y pedir accion concreta." />
+                  </div>
+                  <InputField label="Follow-up" hint="Como retoma oportunidades no cerradas" value={profile.followUpStyle} onChange={(v) => set('followUpStyle', v)} rows={2} placeholder="Ej: recordar contexto y proponer siguiente paso." />
+                  <InputField label="Upsell" hint="Como ofrecer complementos sin verse agresivo" value={profile.upsellStyle} onChange={(v) => set('upsellStyle', v)} rows={2} placeholder="Ej: solo si mejora la solucion principal." />
+                  <div className="sm:col-span-2">
+                    <InputField label="Respuesta ante competidores" hint="Como actuar cuando el cliente compara con otra marca" value={profile.competitorResponse} onChange={(v) => set('competitorResponse', v)} rows={2} placeholder="Ej: reconocer la comparacion, defender diferenciadores y volver a la necesidad del cliente." />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <TokenField label="Condiciones de escalado" hint="Cuando debe pasar a humano" value={profile.escalateConditions} onChange={(v) => set('escalateConditions', v)} placeholder="Separadas por comas" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+        )}
+
+        {tab === 'guardrails' && (
+          <SectionCard>
+            <div className="space-y-4">
+              <div>
+                <SectionTitle>Audiencia y senales</SectionTitle>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="sm:col-span-2 rounded-2xl border border-[rgba(17,17,16,0.07)] bg-[rgba(17,17,16,0.02)] px-3 py-2.5">
+                    <p className="text-[11px] font-bold text-ink-700">Estas senales ayudan al agente a detectar intencion, riesgo y momento de cierre.</p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <TokenField label="Perfiles ideales" hint="Tipos de cliente que mejor convierte este agente" value={profile.idealBuyers} onChange={(v) => set('idealBuyers', v)} placeholder="Separados por comas" />
+                  </div>
+                  <TokenField label="Senales de compra" hint="Frases que indican intencion alta" value={profile.purchaseSignals} onChange={(v) => set('purchaseSignals', v)} placeholder="Ej: cuanto cuesta, quiero comprar, como pago" />
+                  <TokenField label="Senales de bajo interes" hint="Frases que indican baja urgencia" value={profile.lowIntentSignals} onChange={(v) => set('lowIntentSignals', v)} placeholder="Ej: luego te escribo, lo voy a pensar" />
+                  <div className="sm:col-span-2">
+                    <TokenField label="Senales de volumen o B2B" hint="Pedidos empresariales, institucionales o por cantidad" value={profile.bulkBuyerSignals} onChange={(v) => set('bulkBuyerSignals', v)} placeholder="Ej: somos empresa, necesitamos varias unidades" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <TokenField label="Objeciones comunes" hint="Frenos que debe saber reconocer" value={profile.commonObjections} onChange={(v) => set('commonObjections', v)} placeholder="Ej: esta caro, no confio, quiero comparar" />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <SectionTitle>Guardrails del negocio</SectionTitle>
+                <div className="rounded-2xl border border-[rgba(17,17,16,0.08)] bg-[rgba(17,17,16,0.02)] p-3">
+                  <p className="text-[12px] font-semibold text-ink-900">Las reglas comerciales viven en Knowledge Base</p>
+                  <p className="mt-1 text-[12px] leading-relaxed text-ink-500">
+                    Usa los templates de KB para definir descuentos, negociacion, inventario, promesas de entrega, cambios, devoluciones, claims prohibidos y promesas prohibidas.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    <Link to="/knowledge-base" className="rounded-full border border-[rgba(17,17,16,0.10)] bg-white px-2.5 py-1 text-[10px] font-semibold text-ink-700 transition hover:bg-[rgba(17,17,16,0.03)]">
+                      Ir a Knowledge Base
+                    </Link>
+                    <span className="rounded-full border border-[rgba(17,17,16,0.08)] bg-white/80 px-2.5 py-1 text-[10px] text-ink-500">Promos y descuentos</span>
+                    <span className="rounded-full border border-[rgba(17,17,16,0.08)] bg-white/80 px-2.5 py-1 text-[10px] text-ink-500">Claims y promesas prohibidas</span>
+                    <span className="rounded-full border border-[rgba(17,17,16,0.08)] bg-white/80 px-2.5 py-1 text-[10px] text-ink-500">Politica de envios</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+        )}
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <SectionCard>
+            <SectionTitle>Metricas recientes</SectionTitle>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: 'Ejecuciones', value: salesMetrics?.executions },
+                { label: 'Leads utiles', value: salesMetrics?.qualified_leads },
+                { label: 'Follow-ups', value: salesMetrics?.followups_created },
+                { label: 'Handoffs', value: salesMetrics?.handoffs },
+                { label: 'Confianza', value: salesMetrics?.avg_confidence_pct !== undefined ? `${salesMetrics?.avg_confidence_pct}%` : undefined },
+                { label: 'Con producto', value: salesMetrics?.product_recommendations },
+              ].map(({ label, value }) => (
+                <div key={label} className="rounded-2xl border border-[rgba(17,17,16,0.06)] bg-[rgba(17,17,16,0.02)] px-3 py-2.5">
+                  <p className="text-[10px] uppercase tracking-[0.10em] text-ink-400">{label}</p>
+                  <p className="mt-1 text-[15px] font-semibold text-ink-900">{value !== undefined ? String(value) : '-'}</p>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+          <SectionCard>
+            <SectionTitle>Fuentes y conexiones</SectionTitle>
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-brand-200/60 bg-brand-50/50 p-3">
+                <p className="text-[12px] font-semibold text-brand-700">El agente toma pagos, envios, politicas y contexto desde la configuracion operativa y Knowledge Base.</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <Link to="/onboarding" className="rounded-full border border-brand-200/80 bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-brand-700 transition hover:bg-white">
+                    Pagos
+                  </Link>
+                  <Link to="/knowledge-base" className="rounded-full border border-brand-200/80 bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-brand-700 transition hover:bg-white">
+                    KB
+                  </Link>
+                  <Link to="/flows" className="rounded-full border border-brand-200/80 bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-brand-700 transition hover:bg-white">
+                    Flujos
+                  </Link>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {[
+                  { title: 'Catalogo', text: 'Productos, precios, stock y promociones', to: '/products' },
+                  { title: 'Knowledge Base', text: 'FAQs, objeciones, politicas y contexto de marca', to: '/knowledge-base' },
+                  { title: 'Flujos', text: 'Rutas estructuradas para calificar, vender y escalar', to: '/flows' },
+                ].map((item) => (
+                  <Link key={item.title} to={item.to} className="flex items-center justify-between gap-3 rounded-2xl border border-[rgba(17,17,16,0.06)] bg-[rgba(17,17,16,0.02)] px-3 py-3 transition hover:bg-white">
+                    <div>
+                      <p className="text-[13px] font-semibold text-ink-900">{item.title}</p>
+                      <p className="text-[11px] text-ink-500">{item.text}</p>
+                    </div>
+                    <ChevronRight size={14} className="text-ink-400 flex-shrink-0" />
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </SectionCard>
+        </div>
       </div>
     </div>
   );
@@ -751,17 +1158,17 @@ export function AgentsPage() {
         if (!mounted) return;
         setGeneralProfile(mapGeneralProfile(p));
         setProfile(mapProfile(p));
-        const ga = p.ai_preferences?.general_agent;
+        const ga = p.general_agent || p.ai_preferences?.general_agent;
         if (ga) setGeneralSettings({
           enabled: ga.enabled ?? true,
           handoffMode: ga.handoff_mode ?? 'balanceado',
           maxResponseLength: ga.max_response_length ?? 'brief',
           modelName: ga.model_name ?? 'gpt-4.1-nano',
         });
-        const sa = p.ai_preferences?.sales_agent;
+        const sa = p.sales_agent || p.ai_preferences?.sales_agent;
         if (sa) setSettings({
           enabled: sa.enabled ?? true,
-          autonomyLevel: sa.autonomy_level ?? 'semi_autonomo',
+          autonomyLevel: normalizeAutonomyLevel(sa.autonomy_level),
           followupMode: sa.followup_mode ?? 'suave',
           maxFollowups: String(sa.max_followups ?? 1) as SalesAgentUiSettings['maxFollowups'],
           recommendationDepth: String(sa.recommendation_depth ?? 2) as SalesAgentUiSettings['recommendationDepth'],
@@ -792,7 +1199,8 @@ export function AgentsPage() {
     setSaving(true);
     try {
       const currentProfile = await api.getOnboardingProfile();
-      await api.updateOnboardingProfile({
+      const payload = {
+        settings_version: 2,
         general_agent_name: generalProfile.name.trim() || 'General Agent',
         general_agent_profile: {
           agent_persona: generalProfile.agentPersona.trim(),
@@ -805,14 +1213,8 @@ export function AgentsPage() {
           response_language: generalProfile.responseLanguage,
           greeting_message: generalProfile.greetingMessage.trim(),
         },
-        sales_agent_name: profile.name.trim() || 'Sales Agent',
-        sales_agent_profile: {
-          agent_persona: profile.agentPersona.trim(),
-          mission_statement: profile.missionStatement.trim(),
-          response_language: profile.responseLanguage,
-          greeting_message: profile.greetingMessage.trim(),
-          competitor_response: profile.competitorResponse.trim(),
-          brand_profile: {
+        org_profile: {
+          brand: {
             tone_of_voice: profile.toneOfVoice.trim(),
             formality_level: profile.formalityLevel,
             brand_personality: profile.brandPersonality.trim(),
@@ -824,20 +1226,37 @@ export function AgentsPage() {
             urgency_style: profile.urgencyStyle,
             customer_style_notes: profile.customerStyleNotes.trim(),
           },
-          sales_playbook: {
+        },
+        sales_agent: {
+          enabled: settings.enabled,
+          name: profile.name.trim() || 'Sales Agent',
+          persona: profile.agentPersona.trim(),
+          mission_statement: profile.missionStatement.trim(),
+          greeting_message: profile.greetingMessage.trim(),
+          response_language: profile.responseLanguage,
+          max_response_length: settings.maxResponseLength,
+          model_name: currentProfile.sales_agent?.model_name || currentProfile.ai_preferences?.sales_agent?.model_name || 'gpt-4.1-nano',
+          autonomy_level: settings.autonomyLevel,
+          followup_mode: settings.followupMode,
+          max_followups: Number(settings.maxFollowups),
+          recommendation_depth: Number(settings.recommendationDepth) as 1 | 2 | 3,
+          handoff_mode: settings.handoffMode,
+          competitor_response: profile.competitorResponse.trim(),
+          playbook: {
+            opening_style: profile.openingStyle.trim(),
             recommendation_style: profile.recommendationStyle.trim(),
             objection_style: profile.objectionStyle.trim(),
             closing_style: profile.closingStyle.trim(),
             follow_up_style: profile.followUpStyle.trim(),
             upsell_style: profile.upsellStyle.trim(),
             escalate_conditions: profile.escalateConditions,
-            competitor_response: profile.competitorResponse.trim(),
           },
           buyer_model: {
             ideal_buyers: profile.idealBuyers,
             purchase_signals: profile.purchaseSignals,
             low_intent_signals: profile.lowIntentSignals,
             bulk_buyer_signals: profile.bulkBuyerSignals,
+            common_objections: profile.commonObjections,
           },
         },
         ai_preferences: {
@@ -848,17 +1267,9 @@ export function AgentsPage() {
             max_response_length: generalSettings.maxResponseLength,
             model_name: generalSettings.modelName.trim() || 'gpt-4.1-nano',
           },
-          sales_agent: {
-            enabled: settings.enabled,
-            autonomy_level: settings.autonomyLevel,
-            followup_mode: settings.followupMode,
-            max_followups: Number(settings.maxFollowups) as 0 | 1 | 2,
-            recommendation_depth: Number(settings.recommendationDepth) as 1 | 2 | 3,
-            handoff_mode: settings.handoffMode,
-            max_response_length: settings.maxResponseLength,
-          },
         },
-      });
+      } as Partial<OnboardingProfileApiItem> & Record<string, unknown>;
+      await api.updateOnboardingProfile(payload);
       showSuccess('Agentes IA', 'La configuración del runtime seleccionado ya quedó guardada.');
     } catch (e) {
       showError('Agentes IA', e instanceof Error ? e.message : 'No se pudo guardar.');
@@ -882,8 +1293,8 @@ export function AgentsPage() {
   const admins = agents.filter((a) => a.rol === 'admin').length;
 
   return (
-    <div className="page-shell overflow-hidden">
-      <div className="page-stack overflow-hidden">
+    <div className="page-shell">
+      <div className="page-stack min-h-0">
         <PageHeader
           eyebrow="Equipo operativo"
           title="Agentes"
@@ -924,10 +1335,10 @@ export function AgentsPage() {
 
         {/* ── IA tab ── */}
         {activeTab === 'ia' && (
-          <div className={`min-h-0 flex-1 grid gap-3 overflow-hidden ${selectedAiAgent === 'general' ? 'xl:grid-cols-[minmax(0,1fr)]' : 'xl:grid-cols-[minmax(0,1fr)_300px]'}`}>
+          <div className="min-h-[780px] flex-1 grid min-h-0 gap-3 xl:grid-cols-[minmax(0,1fr)]">
 
             {/* Left — config */}
-            <div className="min-h-0 flex flex-col overflow-hidden rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/80 shadow-card">
+            <div className="min-h-[780px] flex flex-col overflow-hidden rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/80 shadow-card">
               {/* Agent cards row */}
               <div className="grid grid-cols-2 gap-2 border-b border-[rgba(17,17,16,0.07)] p-3 xl:grid-cols-4">
                 {[
@@ -966,7 +1377,7 @@ export function AgentsPage() {
               </div>
 
               {/* Config form */}
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex min-h-[620px] flex-1 flex-col overflow-hidden">
                 <div className="flex items-center justify-between border-b border-[rgba(17,17,16,0.07)] px-4 py-2.5">
                   <div>
                     <p className="text-[13px] font-bold text-ink-900">
@@ -985,24 +1396,24 @@ export function AgentsPage() {
                   </button>
                 </div>
                 {selectedAiAgent === 'general'
-                  ? <GeneralConfigPanel profile={generalProfile} set={setGeneralProfileField} />
-                  : <ConfigPanel profile={profile} set={setProfileField} />}
+                  ? <UnifiedGeneralConfigPanel profile={generalProfile} set={setGeneralProfileField} />
+                  : <ConfigPanelV2 profile={profile} set={setProfileField} settings={settings} setSettings={setSettings} salesMetrics={salesMetrics} />}
               </div>
             </div>
 
             {/* Right sidebar — behavior + metrics */}
-            <div className="flex flex-col gap-2.5 overflow-y-auto">
+            {false && <div className="hidden">
 
               {/* Behavior controls */}
-              {selectedAiAgent === 'sales' && (
+              {false && (
                 <div className="rounded-3xl border border-[rgba(17,17,16,0.08)] bg-white/80 p-3 shadow-card">
                   <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.14em] text-ink-500">Comportamiento del agente</p>
                   <div className="grid gap-2">
                   {[
                     { key: 'enabled', label: 'Estado', opts: [{ value: 'on', label: 'Activo' }, { value: 'off', label: 'Pausado' }] },
-                    { key: 'autonomyLevel', label: 'Autonomía', opts: [{ value: 'asistido', label: 'Asistido' }, { value: 'semi_autonomo', label: 'Semi autónomo' }, { value: 'autonomo', label: 'Autónomo' }] },
+                    { key: 'autonomyLevel', label: 'Autonomía', opts: [{ value: 'asistido', label: 'Asistido' }, { value: 'semi_autonomo', label: 'Semi autónomo' }, { value: 'full', label: 'Autónomo' }] },
                     { key: 'followupMode', label: 'Follow-up', opts: [{ value: 'apagado', label: 'Apagado' }, { value: 'suave', label: 'Suave' }, { value: 'activo', label: 'Activo' }] },
-                    { key: 'maxFollowups', label: 'Máx follow-ups', opts: [{ value: '0', label: '0' }, { value: '1', label: '1' }, { value: '2', label: '2' }] },
+                    { key: 'maxFollowups', label: 'Máx follow-ups', opts: [{ value: '0', label: '0' }, { value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }] },
                     { key: 'recommendationDepth', label: 'Recomendaciones', opts: [{ value: '1', label: '1 opción' }, { value: '2', label: '2 opciones' }, { value: '3', label: '3 opciones' }] },
                     { key: 'handoffMode', label: 'Escalado', opts: [{ value: 'temprano', label: 'Temprano' }, { value: 'balanceado', label: 'Balanceado' }, { value: 'estricto', label: 'Estricto' }] },
                     { key: 'maxResponseLength', label: 'Largo de respuesta', opts: [{ value: 'brief', label: 'Breve (1-2 frases)' }, { value: 'standard', label: 'Estándar' }, { value: 'detailed', label: 'Detallado' }] },
@@ -1038,7 +1449,7 @@ export function AgentsPage() {
                     { label: 'Leads útiles', value: salesMetrics?.qualified_leads },
                     { label: 'Follow-ups', value: salesMetrics?.followups_created },
                     { label: 'Handoffs', value: salesMetrics?.handoffs },
-                    { label: 'Confianza', value: salesMetrics ? `${salesMetrics.avg_confidence_pct}%` : undefined },
+                    { label: 'Confianza', value: salesMetrics?.avg_confidence_pct !== undefined ? `${salesMetrics?.avg_confidence_pct}%` : undefined },
                     { label: 'Con producto', value: salesMetrics?.product_recommendations },
                   ].map(({ label, value }) => (
                     <div key={label} className="rounded-2xl border border-[rgba(17,17,16,0.06)] bg-white/80 px-2.5 py-2">
@@ -1086,7 +1497,7 @@ export function AgentsPage() {
                   ))}
                 </div>
               </div>}
-            </div>
+            </div>}
           </div>
         )}
 
