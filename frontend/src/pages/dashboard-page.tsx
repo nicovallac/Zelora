@@ -436,7 +436,7 @@ export default function DashboardPage() {
       <div className="page-shell">
         <div className="page-stack">
           <Card className="p-6 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl text-rose-400" style={{ background: 'rgba(239,68,68,0.12)' }}>
               <AlertTriangle size={20} />
             </div>
             <h1 className="mt-4 text-lg font-bold text-ink-900">No pudimos cargar tu dashboard</h1>
@@ -484,25 +484,28 @@ export default function DashboardPage() {
         {!derived.hasAnyData ? <EmptyDashboardState /> : null}
 
         {error ? (
-          <div className="rounded-2xl border border-amber-200/60 bg-amber-50/60 px-4 py-3 text-sm text-amber-700">
+          <div
+            className="rounded-2xl px-4 py-3 text-sm text-amber-700"
+            style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.18)' }}
+          >
             Cargamos el dashboard con datos parciales. Algunos modulos no respondieron y pueden verse incompletos.
           </div>
         ) : null}
 
         <div
-          className="rounded-2xl p-4 text-[12px] text-ink-400"
-          style={{ border: '1px solid rgba(17,17,16,0.07)', background: 'rgba(255,255,255,0.45)' }}
+          className="rounded-2xl p-4 text-[12px] text-ink-500"
+          style={{ border: '1px solid rgba(0,0,0,0.06)', background: 'rgba(255,255,255,0.60)' }}
         >
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p>
               Si quieres afinar el comportamiento del asistente sin frenar la operacion, hazlo desde{' '}
-              <Link to="/admin/organizations" className="font-semibold text-brand-600 hover:text-brand-500">
+              <Link to="/admin/organizations" className="font-semibold text-brand-400 hover:text-brand-300">
                 Organizacion
               </Link>
               .
             </p>
             {refreshing ? (
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-ink-400">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-ink-500">
                 <Loader2 size={12} className="animate-spin" />
                 Actualizando...
               </span>

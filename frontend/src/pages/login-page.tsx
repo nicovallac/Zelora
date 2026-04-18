@@ -11,21 +11,21 @@ const DEMO_ROWS = [
 ];
 
 const FEATURES = [
-  { Icon: MessageSquare, title: 'Atención omnicanal 24/7', desc: 'WhatsApp, Instagram, Web Chat y más desde un solo lugar.' },
-  { Icon: BarChart2, title: 'Analytics en tiempo real', desc: 'KPIs, satisfacción e intenciones en un dashboard unificado.' },
-  { Icon: Shield, title: 'Seguro y trazable', desc: 'Roles, escalamiento inteligente y auditoría completa.' },
-  { Icon: Zap, title: 'IA que aprende', desc: 'Tu base de conocimiento mejora con cada conversación.' },
+  { Icon: MessageSquare, title: 'Omnicanal 24/7',       desc: 'WhatsApp, Instagram, Web y más.' },
+  { Icon: BarChart2,     title: 'Analytics en tiempo real', desc: 'KPIs e intenciones unificados.' },
+  { Icon: Shield,        title: 'Seguro y trazable',    desc: 'Roles y auditoría completa.' },
+  { Icon: Zap,           title: 'IA que aprende',       desc: 'Mejora con cada conversación.' },
 ];
 
 export function LoginPage() {
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState('');
 
   useEffect(() => {
     if (isAuthenticated) navigate('/', { replace: true });
@@ -53,155 +53,297 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen">
-      {/* Left panel */}
-      <div className="hidden lg:flex lg:w-1/2 flex-col justify-between bg-gradient-to-br from-brand-700 to-brand-900 px-12 py-14">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
-            <MessageSquare size={18} className="text-white" />
+    <div
+      className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-16"
+      style={{ background: '#0f0e13' }}
+    >
+
+      {/* ── Background: violet grid ──────────────────────────── */}
+      {/* Grid lines tinted violet so they're actually visible */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage: `
+            linear-gradient(rgba(139,92,246,0.22) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(139,92,246,0.22) 1px, transparent 1px)
+          `,
+          backgroundSize: '48px 48px',
+          maskImage: 'radial-gradient(ellipse 55% 60% at 50% 50%, black 0%, transparent 100%)',
+          WebkitMaskImage: 'radial-gradient(ellipse 55% 60% at 50% 50%, black 0%, transparent 100%)',
+        }}
+      />
+
+      {/* Strong violet spotlight — glows behind the form */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: `
+            radial-gradient(ellipse 70% 55% at 50% 52%, rgba(109,40,217,0.38) 0%, transparent 65%),
+            radial-gradient(ellipse 40% 30% at 50% 52%, rgba(139,92,246,0.22) 0%, transparent 55%)
+          `,
+        }}
+      />
+
+      {/* Edge vignette — fades grid to black at borders */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: `
+            radial-gradient(ellipse 100% 100% at 50% 50%, transparent 40%, rgba(15,14,19,0.85) 100%)
+          `,
+        }}
+      />
+
+      {/* ── Content ──────────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut' }}
+        className="relative z-10 flex w-full max-w-[420px] flex-col items-center"
+      >
+        {/* Logo */}
+        <div className="mb-6 flex items-center gap-2.5">
+          <div
+            className="flex h-9 w-9 items-center justify-center rounded-xl"
+            style={{ background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)' }}
+          >
+            <Zap size={16} className="text-white" />
           </div>
-          <span className="text-xl font-black text-white tracking-tight">Zelora</span>
+          <span className="text-[20px] font-bold text-white" style={{ letterSpacing: '-0.02em' }}>
+            Zelora
+          </span>
         </div>
 
-        <div className="space-y-8">
-          <div>
-            <div className="inline-flex items-center gap-2 bg-white/15 rounded-full px-3 py-1.5 mb-4">
-              <span className="text-xs font-bold text-white/80 uppercase tracking-wide">Para PYMEs en LATAM</span>
-            </div>
-            <h1 className="text-4xl font-black text-white leading-tight">
-              La IA de atención<br />que tu PYME necesita
-            </h1>
-            <p className="mt-3 text-lg text-white/60 leading-relaxed">
-              Automatiza el 74% de tus consultas desde el día 1. Sin infraestructura costosa, sin equipos grandes.
-            </p>
+        {/* Headline */}
+        <div className="mb-8 text-center">
+          <div
+            className="mb-3 inline-flex items-center gap-2 rounded-full px-3 py-1"
+            style={{
+              background: 'rgba(139,92,246,0.15)',
+              border: '1px solid rgba(139,92,246,0.28)',
+            }}
+          >
+            <span
+              className="h-1.5 w-1.5 rounded-full bg-brand-400"
+              style={{ boxShadow: '0 0 6px rgba(167,139,250,0.9)' }}
+            />
+            <span className="text-[11px] font-semibold uppercase text-brand-300" style={{ letterSpacing: '0.12em' }}>
+              Para PYMEs en LATAM
+            </span>
           </div>
-          <div className="space-y-5">
-            {FEATURES.map(({ Icon, title, desc }) => (
-              <div key={title} className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
-                  <Icon size={18} className="text-white" />
-                </div>
-                <div>
-                  <p className="font-bold text-white">{title}</p>
-                  <p className="text-sm text-white/55 leading-snug">{desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          <h1
+            className="text-[28px] font-extrabold leading-[1.15] text-white"
+            style={{ letterSpacing: '-0.025em' }}
+          >
+            La IA de atención<br />
+            <span className="text-brand-400">que tu negocio necesita</span>
+          </h1>
+          <p className="mt-3 text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
+            Automatiza el 74% de tus consultas desde el día 1.
+          </p>
         </div>
 
-        <p className="text-xs text-white/30">© 2026 Zelora · Todos los derechos reservados</p>
-      </div>
-
-      {/* Right panel */}
-      <div className="flex flex-1 items-center justify-center bg-[#eceae4] px-4 py-12">
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="w-full max-w-md"
+        {/* Form card */}
+        <div
+          className="w-full rounded-3xl p-7"
+          style={{
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(139,92,246,0.25)',
+            boxShadow: '0 0 0 1px rgba(255,255,255,0.04) inset, 0 24px 60px rgba(0,0,0,0.35)',
+            backdropFilter: 'blur(20px)',
+          }}
         >
-          {/* Mobile logo */}
-          <div className="flex lg:hidden items-center justify-center gap-2 mb-8">
-            <div className="w-9 h-9 bg-brand-500 rounded-xl flex items-center justify-center">
-              <MessageSquare size={18} className="text-ink-900" />
-            </div>
-            <span className="text-xl font-black text-ink-800 tracking-tight">Zelora</span>
-          </div>
-
-          <div className="rounded-4xl border border-[rgba(17,17,16,0.08)] bg-white/75 backdrop-blur-md shadow-float p-8">
-            <div className="mb-7 text-center">
-              <h2 className="text-2xl font-black text-ink-900">Bienvenido de vuelta</h2>
-              <p className="text-sm text-ink-500 mt-1">Inicia sesión en tu cuenta de Zelora</p>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-ink-600">Correo electrónico</label>
-                <div className="flex items-center gap-2 rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-400/20 transition">
-                  <Mail size={15} className="shrink-0 text-ink-400" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="correo@empresa.com"
-                    className="flex-1 bg-transparent text-[13px] text-ink-800 placeholder-ink-400 outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-ink-600">Contraseña</label>
-                  <a href="#" className="text-xs text-brand-400 hover:underline font-medium">¿Olvidaste tu contraseña?</a>
-                </div>
-                <div className="flex items-center gap-2 rounded-2xl border border-[rgba(17,17,16,0.10)] bg-white/80 px-3 py-2.5 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-400/20 transition">
-                  <input
-                    type={showPass ? 'text' : 'password'}
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="flex-1 bg-transparent text-[13px] text-ink-800 placeholder-ink-400 outline-none"
-                  />
-                  <button type="button" onClick={() => setShowPass((v) => !v)} className="shrink-0 text-ink-400 hover:text-ink-600 transition">
-                    {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-              </div>
-
-              {error && (
-                <div className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-3 py-2.5">
-                  <XCircle size={15} className="shrink-0 text-red-500" />
-                  <p className="text-xs font-medium text-red-700">{error}</p>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="flex w-full items-center justify-center gap-2 rounded-full bg-brand-500 py-3 text-[13px] font-semibold text-white transition hover:bg-brand-500 shadow-card disabled:opacity-60 disabled:cursor-not-allowed mt-2"
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Email */}
+            <div>
+              <label className="mb-1.5 block text-[12px] font-semibold" style={{ color: 'rgba(255,255,255,0.60)' }}>
+                Correo electrónico
+              </label>
+              <div
+                className="flex items-center gap-2 rounded-xl px-3 py-2.5 transition-all duration-150 focus-within:ring-2 focus-within:ring-brand-500/40"
+                style={{
+                  background: 'rgba(255,255,255,0.07)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = 'rgba(139,92,246,0.55)'; }}
+                onBlur={(e)  => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.10)'; }}
               >
-                {loading && <Loader2 size={16} className="animate-spin" />}
-                {loading ? 'Ingresando...' : 'Iniciar sesión'}
-              </button>
-            </form>
-
-            <p className="mt-5 text-center text-sm text-ink-500">
-              ¿No tienes cuenta?{' '}
-              <Link to="/signup" className="font-semibold text-ink-700 hover:underline">
-                Regístrate gratis
-              </Link>
-            </p>
-
-            {/* Demo credentials */}
-            {USE_MOCK_DATA && (
-              <div className="mt-6 rounded-2xl border border-[rgba(17,17,16,0.07)] bg-[rgba(255,255,255,0.50)] p-4">
-                <p className="mb-3 text-xs font-bold text-ink-500 uppercase tracking-wide">Credenciales de demo</p>
-                <div className="space-y-2">
-                  {DEMO_ROWS.map(({ label, email: demoEmail }) => (
-                    <div key={demoEmail} className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <span className="text-[10px] font-bold text-ink-500 uppercase">{label}: </span>
-                        <span className="text-[10px] text-ink-600 font-mono">{demoEmail}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => autofill(demoEmail)}
-                        className="shrink-0 rounded-full border border-[rgba(17,17,16,0.12)] bg-[rgba(255,255,255,0.75)] px-2.5 py-1 text-[10px] font-bold text-ink-700 hover:bg-white transition"
-                      >
-                        Autocompletar
-                      </button>
-                    </div>
-                  ))}
-                  <p className="text-[10px] text-ink-500"><span className="font-bold">Contraseña:</span> demo1234</p>
-                </div>
+                <Mail size={14} style={{ color: 'rgba(255,255,255,0.30)', flexShrink: 0 }} />
+                <input
+                  type="email"
+                  required
+                  autoFocus
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="correo@empresa.com"
+                  className="flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-[rgba(255,255,255,0.28)]"
+                />
               </div>
+            </div>
+
+            {/* Password */}
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="text-[12px] font-semibold" style={{ color: 'rgba(255,255,255,0.60)' }}>
+                  Contraseña
+                </label>
+                <a href="#" className="text-[11px] font-medium text-brand-400 transition-colors hover:text-brand-300">
+                  ¿Olvidaste tu contraseña?
+                </a>
+              </div>
+              <div
+                className="flex items-center gap-2 rounded-xl px-3 py-2.5 transition-all duration-150 focus-within:ring-2 focus-within:ring-brand-500/40"
+                style={{
+                  background: 'rgba(255,255,255,0.07)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = 'rgba(139,92,246,0.55)'; }}
+                onBlur={(e)  => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.10)'; }}
+              >
+                <input
+                  type={showPass ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-[rgba(255,255,255,0.28)]"
+                />
+                <button
+                  type="button"
+                  aria-label={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  onClick={() => setShowPass((v) => !v)}
+                  className="shrink-0 cursor-pointer transition-colors"
+                  style={{ color: 'rgba(255,255,255,0.30)' }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.70)'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.30)'; }}
+                >
+                  {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Error */}
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-center gap-2 rounded-xl px-3 py-2.5"
+                style={{
+                  background: 'rgba(239,68,68,0.10)',
+                  border: '1px solid rgba(239,68,68,0.25)',
+                }}
+              >
+                <XCircle size={14} className="shrink-0 text-red-400" />
+                <p className="text-[12px] font-medium text-red-300">{error}</p>
+              </motion.div>
             )}
-          </div>
-        </motion.div>
-      </div>
+
+            {/* Submit */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="mt-1 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-[13px] font-semibold text-white transition-all duration-150 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+              style={{
+                background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                boxShadow: '0 0 0 1px rgba(139,92,246,0.40) inset, 0 4px 16px rgba(109,40,217,0.45)',
+              }}
+              onMouseEnter={(e) => {
+                if (!loading) (e.currentTarget as HTMLButtonElement).style.boxShadow =
+                  '0 0 0 1px rgba(139,92,246,0.50) inset, 0 6px 24px rgba(109,40,217,0.60)';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.boxShadow =
+                  '0 0 0 1px rgba(139,92,246,0.40) inset, 0 4px 16px rgba(109,40,217,0.45)';
+              }}
+            >
+              {loading && <Loader2 size={15} className="animate-spin" />}
+              {loading ? 'Ingresando...' : 'Iniciar sesión'}
+            </button>
+          </form>
+
+          {/* Signup link */}
+          <p className="mt-5 text-center text-[13px]" style={{ color: 'rgba(255,255,255,0.38)' }}>
+            ¿No tienes cuenta?{' '}
+            <Link to="/signup" className="font-semibold text-brand-300 transition-colors hover:text-brand-200">
+              Regístrate gratis
+            </Link>
+          </p>
+
+          {/* Demo credentials */}
+          {USE_MOCK_DATA && (
+            <div
+              className="mt-5 rounded-2xl p-4"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.08)',
+              }}
+            >
+              <p className="mb-3 text-[10px] font-bold uppercase" style={{ letterSpacing: '0.12em', color: 'rgba(255,255,255,0.30)' }}>
+                Credenciales de demo
+              </p>
+              <div className="space-y-2">
+                {DEMO_ROWS.map(({ label, email: demoEmail }) => (
+                  <div key={demoEmail} className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold uppercase" style={{ color: 'rgba(255,255,255,0.35)' }}>{label}: </span>
+                      <span className="font-mono text-[10px]" style={{ color: 'rgba(255,255,255,0.55)' }}>{demoEmail}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => autofill(demoEmail)}
+                      className="shrink-0 cursor-pointer rounded-full px-2.5 py-1 text-[10px] font-bold transition-colors"
+                      style={{
+                        color: 'rgba(255,255,255,0.55)',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                      }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)'; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                    >
+                      Autocompletar
+                    </button>
+                  </div>
+                ))}
+                <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.30)' }}>
+                  <span className="font-bold">Contraseña:</span> demo1234
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Feature strip */}
+        <div className="mt-8 grid w-full grid-cols-2 gap-3">
+          {FEATURES.map(({ Icon, title, desc }) => (
+            <div
+              key={title}
+              className="flex items-start gap-2.5 rounded-2xl p-3"
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.06)',
+              }}
+            >
+              <div
+                className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+                style={{
+                  background: 'rgba(139,92,246,0.15)',
+                  border: '1px solid rgba(139,92,246,0.22)',
+                }}
+              >
+                <Icon size={13} className="text-brand-400" />
+              </div>
+              <div>
+                <p className="text-[12px] font-semibold text-white/70">{title}</p>
+                <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'rgba(255,255,255,0.32)' }}>{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <p className="mt-8 text-[11px]" style={{ color: 'rgba(255,255,255,0.18)' }}>
+          © 2026 Zelora · Todos los derechos reservados
+        </p>
+      </motion.div>
     </div>
   );
 }

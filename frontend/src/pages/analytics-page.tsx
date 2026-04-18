@@ -61,7 +61,10 @@ function parseHourLabel(value: string): string {
 }
 
 export function AnalyticsPage() {
-  const [range, setRange] = useState<RangeKey>('30d');
+  const [range, setRange] = useState<RangeKey>(() => {
+    const saved = localStorage.getItem('zelora_analytics_range') as RangeKey | null;
+    return saved && ['hoy', '7d', '30d', '90d'].includes(saved) ? saved : '30d';
+  });
   const [channel, setChannel] = useState<ChannelTab>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -242,7 +245,7 @@ export function AnalyticsPage() {
               {RANGE_OPTIONS.map((option) => (
                 <button
                   key={option.key}
-                  onClick={() => setRange(option.key)}
+                  onClick={() => { setRange(option.key); localStorage.setItem('zelora_analytics_range', option.key); }}
                   className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                     range === option.key
                       ? 'bg-brand-500 text-white'

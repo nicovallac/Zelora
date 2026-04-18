@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { setUnreadCount } from '../lib/unread-store';
 import { AlertTriangle, ChevronLeft, Columns3, ListFilter, PanelsTopLeft, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
 import type {
@@ -306,6 +307,11 @@ export function InboxPage() {
   const [appChat, setAppChat] = useState<AppChatConnectionApiItem | null>(null);
   const [webWidget, setWebWidget] = useState<WebWidgetConnectionApiItem | null>(null);
   const [whatsapp, setWhatsApp] = useState<WhatsAppConnectionApiItem | null>(null);
+
+  // Sync unread count to sidebar
+  useEffect(() => {
+    setUnreadCount(conversationList.filter((c) => c.unread).length);
+  }, [conversationList]);
 
   useEffect(() => {
     void loadInbox();

@@ -4,7 +4,6 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Futuristic violet — single accent color
         brand: {
           50:  '#faf5ff',
           100: '#ede9fe',
@@ -17,43 +16,52 @@ export default {
           800: '#5b21b6',
           900: '#4c1d95',
         },
-        // Warm neutral system
+        // Light theme — high numbers = dark text, low numbers = light surfaces
         ink: {
-          50:  '#eceae4',   // page background — warm gray
-          75:  '#f0eee8',   // slightly lighter
-          100: '#f5f4ef',   // card / panel surface
-          150: '#eae8e1',   // subtle dividers
-          200: '#dddbd2',   // borders
-          300: '#c4c1b4',   // muted borders / placeholders
-          400: '#9a9789',   // muted text
-          500: '#6e6b5e',   // secondary text
-          600: '#4a4840',   // body text
-          700: '#302e28',   // strong text
-          800: '#1d1c18',   // headings
-          900: '#111110',   // primary text
-        }
+          50:  '#f9f9f7',
+          75:  '#f4f4f1',
+          100: '#efefeb',
+          150: '#e5e5df',
+          200: '#d4d4cc',
+          300: '#b8b8ae',
+          400: '#919188',
+          500: '#6e6b60',
+          600: '#4a4840',
+          700: '#302e28',
+          800: '#1d1c18',
+          900: '#111110',
+        },
+        sidebar: {
+          bg:         '#111110',
+          surface:    '#1a1a18',
+          border:     'rgba(255,255,255,0.07)',
+          text:       'rgba(255,255,255,0.55)',
+          'text-dim': 'rgba(255,255,255,0.32)',
+          'text-on':  '#ffffff',
+          hover:      'rgba(255,255,255,0.07)',
+          active:     'rgba(139,92,246,0.18)',
+        },
       },
       fontFamily: {
-        sans: ['"Space Grotesk"', '"Manrope"', '"Segoe UI"', 'system-ui', 'sans-serif'],
+        sans: ['"Plus Jakarta Sans"', '"Space Grotesk"', '"Manrope"', '"Segoe UI"', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        // Lab panel system — soft, layered, never harsh
-        card:   '0 1px 2px rgba(0,0,0,0.03), 0 6px 18px rgba(0,0,0,0.04)',
-        soft:   '0 2px 8px rgba(0,0,0,0.04), 0 12px 32px rgba(0,0,0,0.05)',
-        float:  '0 4px 16px rgba(0,0,0,0.05), 0 20px 52px rgba(0,0,0,0.07)',
-        hover:  '0 6px 24px rgba(0,0,0,0.08), 0 24px 56px rgba(0,0,0,0.09)',
-        inset:  'inset 0 1px 3px rgba(0,0,0,0.06)',
+        card:  '0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.05)',
+        soft:  '0 2px 8px rgba(0,0,0,0.05), 0 12px 32px rgba(0,0,0,0.07)',
+        float: '0 4px 16px rgba(0,0,0,0.06), 0 20px 52px rgba(0,0,0,0.09)',
+        hover: '0 6px 24px rgba(0,0,0,0.10), 0 24px 56px rgba(0,0,0,0.11)',
+        ring:  '0 0 0 3px rgba(139,92,246,0.25)',
       },
       borderRadius: {
-        '2xl':  '16px',
-        '3xl':  '24px',
-        '4xl':  '32px',
-        '5xl':  '40px',
+        '2xl': '16px',
+        '3xl': '24px',
+        '4xl': '32px',
+        '5xl': '40px',
       },
       letterSpacing: {
-        label: '0.08em',
-        wide:  '0.12em',
-        wider: '0.18em',
+        label: '0.06em',
+        wide:  '0.10em',
+        wider: '0.16em',
       },
     }
   },
