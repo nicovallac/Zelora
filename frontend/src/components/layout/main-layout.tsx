@@ -378,10 +378,8 @@ export default function MainLayout() {
         <header
           className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2.5 px-3 sm:px-4"
           style={{
-            background: 'rgba(247,246,242,0.88)',
-            borderBottom: '1px solid rgba(0,0,0,0.07)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
+            background: '#ffffff',
+            borderBottom: '1px solid #e5e3de',
           }}
         >
           {/* Mobile hamburger */}
@@ -397,8 +395,8 @@ export default function MainLayout() {
           <div
             className="flex min-w-0 items-center gap-1.5 rounded-full px-2.5 py-1"
             style={{
-              background: 'rgba(0,0,0,0.05)',
-              border: '1px solid rgba(0,0,0,0.07)',
+              background: '#f0ede8',
+              border: '1px solid #e5e3de',
             }}
           >
             <div
@@ -472,10 +470,8 @@ export default function MainLayout() {
         <nav
           className="fixed inset-x-0 bottom-0 z-30 px-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.4rem)] pt-2 lg:hidden"
           style={{
-            background: 'rgba(15,14,19,0.96)',
-            borderTop: '1px solid rgba(255,255,255,0.07)',
-            backdropFilter: 'blur(24px)',
-            WebkitBackdropFilter: 'blur(24px)',
+            background: '#ffffff',
+            borderTop: '1px solid #e5e3de',
           }}
         >
           <div className="grid grid-cols-5 gap-1">
@@ -492,8 +488,8 @@ export default function MainLayout() {
                   to={item.path}
                   className="relative flex min-h-[52px] flex-col items-center justify-center rounded-xl px-1 py-2 text-[10px] font-semibold transition-all duration-150 cursor-pointer"
                   style={{
-                    background: isActive ? 'rgba(139,92,246,0.12)' : 'transparent',
-                    color: isActive ? '#a78bfa' : 'rgba(255,255,255,0.40)',
+                    background: isActive ? 'rgba(139,92,246,0.08)' : 'transparent',
+                    color: isActive ? '#7c3aed' : '#919188',
                     letterSpacing: '0.04em',
                   }}
                 >
@@ -516,7 +512,7 @@ export default function MainLayout() {
             <button
               onClick={() => setSidebarOpen(true)}
               className="flex min-h-[52px] flex-col items-center justify-center rounded-xl px-1 py-2 text-[10px] font-semibold transition-colors cursor-pointer"
-              style={{ color: 'rgba(255,255,255,0.40)', letterSpacing: '0.04em' }}
+              style={{ color: '#919188', letterSpacing: '0.04em' }}
             >
               <Menu size={16} />
               <span className="mt-1">Más</span>
