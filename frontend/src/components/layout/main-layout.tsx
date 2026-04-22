@@ -63,8 +63,8 @@ function NavItem({ item, onClose }: { item: NavEntry; onClose?: () => void }) {
       className={({ isActive }) =>
         `group flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 ${
           isActive
-            ? 'bg-brand-500/90 text-white font-semibold shadow-card'
-            : 'text-ink-500 hover:bg-[rgba(17,17,16,0.05)] hover:text-ink-800'
+            ? 'bg-brand-600/80 text-white font-semibold shadow-card'
+            : 'text-white/55 hover:bg-[rgba(255,255,255,0.07)] hover:text-white/85'
         }`
       }
       onClick={onClose}
@@ -74,7 +74,7 @@ function NavItem({ item, onClose }: { item: NavEntry; onClose?: () => void }) {
           {Icon && (
             <Icon
               size={14}
-              className={isActive ? 'text-ink-800' : 'text-ink-400 group-hover:text-ink-600'}
+              className={isActive ? 'text-white/90' : 'text-white/40 group-hover:text-white/65'}
             />
           )}
           <span className="truncate">{item.label}</span>
@@ -90,8 +90,7 @@ export default function MainLayout() {
   const location = useLocation();
   const { connected } = useWebSocket('/ws/inbox/', 'subprotocol');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const organizationName =
-    agent?.email?.split('@')[1]?.split('.')[0] ?? 'organizacion';
+  const organizationName = agent?.organizationName ?? 'organizacion';
   const currentPath = location.pathname;
 
   const sectionItems = NAV_SECTIONS.map((section) => ({
@@ -111,16 +110,16 @@ export default function MainLayout() {
     <div
       className="flex h-full flex-col"
       style={{
-        background: 'rgba(236,234,228,0.88)',
-        borderRight: '1px solid rgba(17,17,16,0.07)',
-        backdropFilter: 'blur(24px) saturate(1.3)',
-        WebkitBackdropFilter: 'blur(24px) saturate(1.3)',
+        background: 'rgba(12,11,17,0.92)',
+        borderRight: '1px solid rgba(139,92,246,0.18)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
       }}
     >
       {/* Logo */}
       <div
         className="flex items-center justify-between px-4 pb-4 pt-5"
-        style={{ borderBottom: '1px solid rgba(17,17,16,0.06)' }}
+        style={{ borderBottom: '1px solid rgba(139,92,246,0.15)' }}
       >
         <div className="flex items-center gap-2.5">
           <div
@@ -130,14 +129,14 @@ export default function MainLayout() {
             <MessageSquare size={14} className="text-white" />
           </div>
           <span
-            className="text-[15px] font-bold text-ink-900"
+            className="text-[15px] font-bold text-white/90"
             style={{ letterSpacing: '-0.01em' }}
           >
             Zelora
           </span>
         </div>
         <button
-          className="rounded-xl p-1.5 text-ink-400 transition-colors hover:bg-[rgba(17,17,16,0.06)] hover:text-ink-700 lg:hidden"
+          className="rounded-xl p-1.5 text-white/50 transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-white/85 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         >
           <X size={14} />
@@ -149,8 +148,8 @@ export default function MainLayout() {
         {sectionItems.map((section) => (
           <div key={section.label}>
             <p
-              className="px-3 pb-1.5 text-[9px] font-semibold uppercase text-ink-400"
-              style={{ letterSpacing: '0.18em' }}
+              className="px-3 pb-1.5 text-[9px] font-semibold uppercase"
+              style={{ letterSpacing: '0.18em', color: 'rgba(255,255,255,0.32)' }}
             >
               {section.label}
             </p>
@@ -165,8 +164,8 @@ export default function MainLayout() {
         {isAdmin && (
           <div>
             <p
-              className="px-3 pb-1.5 text-[9px] font-semibold uppercase text-ink-400"
-              style={{ letterSpacing: '0.18em' }}
+              className="px-3 pb-1.5 text-[9px] font-semibold uppercase"
+              style={{ letterSpacing: '0.18em', color: 'rgba(255,255,255,0.32)' }}
             >
               Admin
             </p>
@@ -180,26 +179,26 @@ export default function MainLayout() {
       </nav>
 
       {/* Profile footer */}
-      <div style={{ borderTop: '1px solid rgba(17,17,16,0.06)' }} className="p-3">
+      <div style={{ borderTop: '1px solid rgba(139,92,246,0.15)' }} className="p-3">
         <button
           onClick={() => { navigate('/profile'); setSidebarOpen(false); }}
-          className="group flex w-full items-center gap-3 rounded-xl p-2 transition-colors hover:bg-[rgba(17,17,16,0.05)]"
+          className="group flex w-full items-center gap-3 rounded-xl p-2 transition-colors hover:bg-[rgba(255,255,255,0.06)]"
         >
           <div
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-brand-700"
-            style={{ background: '#ede9fe' }}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-brand-300"
+            style={{ background: 'rgba(139,92,246,0.20)' }}
           >
             {agent?.nombre?.split(' ').map((n) => n[0]).join('').slice(0, 2) || 'AG'}
           </div>
           <div className="min-w-0 flex-1 text-left">
-            <p className="truncate text-[12px] font-semibold text-ink-800">
+            <p className="truncate text-[12px] font-semibold text-white/85">
               {agent?.nombre || 'Agente'}
             </p>
-            <p className="truncate text-[11px] capitalize text-ink-400">
+            <p className="truncate text-[11px] capitalize text-white/45">
               {agent?.rol || 'asesor'}
             </p>
           </div>
-          <ChevronRight size={12} className="text-ink-300 group-hover:text-ink-500" />
+          <ChevronRight size={12} className="text-white/28 group-hover:text-white/55" />
         </button>
       </div>
     </div>
@@ -215,7 +214,7 @@ export default function MainLayout() {
         <div className="fixed inset-0 z-40 lg:hidden">
           <div
             className="absolute inset-0"
-            style={{ background: 'rgba(17,17,16,0.18)', backdropFilter: 'blur(4px)' }}
+            style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
             onClick={() => setSidebarOpen(false)}
           />
           <div className="relative h-full w-[84vw] max-w-[300px] shadow-float">
@@ -231,7 +230,7 @@ export default function MainLayout() {
         <header
           className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2.5 px-3 sm:px-4"
           style={{
-            background: 'rgba(232,229,222,0.85)',
+            background: 'rgba(236,234,228,0.85)',
             borderBottom: '1px solid rgba(17,17,16,0.07)',
             backdropFilter: 'blur(20px) saturate(1.3)',
             WebkitBackdropFilter: 'blur(20px) saturate(1.3)',
@@ -302,10 +301,10 @@ export default function MainLayout() {
         <nav
           className="fixed inset-x-0 bottom-0 z-30 px-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.4rem)] pt-2 lg:hidden"
           style={{
-            background: 'rgba(236,234,228,0.90)',
-            borderTop: '1px solid rgba(17,17,16,0.07)',
-            backdropFilter: 'blur(24px) saturate(1.3)',
-            WebkitBackdropFilter: 'blur(24px) saturate(1.3)',
+            background: 'rgba(12,11,17,0.92)',
+            borderTop: '1px solid rgba(139,92,246,0.15)',
+            backdropFilter: 'blur(24px)',
+            WebkitBackdropFilter: 'blur(24px)',
           }}
         >
           <div className="grid grid-cols-5 gap-1">
@@ -323,11 +322,11 @@ export default function MainLayout() {
                   className={`flex min-h-[54px] flex-col items-center justify-center rounded-2xl px-1 py-2 text-[10px] font-semibold transition-all duration-150 ${
                     isActive
                       ? 'bg-brand-500/80 text-white'
-                      : 'text-ink-400 hover:text-ink-600'
+                      : 'text-white/50 hover:text-white/75'
                   }`}
                   style={{ letterSpacing: '0.04em' }}
                 >
-                  <Icon size={16} className={isActive ? 'text-ink-800' : 'text-ink-400'} />
+                  <Icon size={16} className={isActive ? 'text-white/90' : 'text-white/45'} />
                   <span className="mt-1">{item.label}</span>
                 </NavLink>
               );
@@ -335,9 +334,9 @@ export default function MainLayout() {
 
             <button
               onClick={() => setSidebarOpen(true)}
-              className="flex min-h-[54px] flex-col items-center justify-center rounded-2xl px-1 py-2 text-[10px] font-semibold text-ink-400 transition-colors"
+              className="flex min-h-[54px] flex-col items-center justify-center rounded-2xl px-1 py-2 text-[10px] font-semibold text-white/50 transition-colors"
             >
-              <Menu size={16} className="text-ink-400" />
+              <Menu size={16} className="text-white/45" />
               <span className="mt-1">Mas</span>
             </button>
           </div>
